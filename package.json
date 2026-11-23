@@ -25,7 +25,10 @@
     "land": "agentic-os land",
     "successor": "agentic-os successor",
     "release:common": "agentic-os release-common",
-    "sync:canonical": "agentic-os canonical-sync"
+    "sync:canonical": "agentic-os canonical-sync",
+    "presets:build": "node tools/project-presets.mjs",
+    "presets:check": "node tools/project-presets.mjs --check",
+    "pretest": "npm run presets:check"
   },
   "license": "MIT",
   "repository": {
@@ -36,6 +39,7 @@
     "node": ">=22.22.0"
   },
   "devDependencies": {
-    "agentic-os": "https://codeload.github.com/huijoohwee/agentic-os/tar.gz/f5cca6b1cd0d7bd16a0dd57abba35996262c481f"
+    "agentic-os": "https://codeload.github.com/huijoohwee/agentic-os/tar.gz/f5cca6b1cd0d7bd16a0dd57abba35996262c481f",
+    "js-yaml": "4.3.2"
   }
 }
