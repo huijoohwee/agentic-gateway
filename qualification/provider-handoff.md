@@ -14,3 +14,11 @@ Use Trading’s `npm run quote:moomoo -- replay HK.00700 qualification/moomoo/sd
 HyperFrames is an external Apache-2.0 qualification tool. The moomoo JavaScript SDK declares ISC. Visual OpenD is separately installed vendor software. Neither vendor runtime is bundled in a consumer’s browser. A signed-in local quote session and an offline replay exercise different boundaries. The physical-device test, uncoached timing and buyer pilot remain deferred.
 
 [HyperFrames HTML schema](https://github.com/heygen-com/hyperframes/blob/v0.9.85/docs/reference/html-schema.mdx) · [moomoo market snapshot](https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-market-snapshot.html)
+
+## Overlapping text and independent quote sides
+
+The [Open studio invitation](hyperframes/open-studio/index.html) is an original MIT fixture. HyperFrames 0.9.85 snapshots, Graph’s preview and its decoded 320 × 180 MP4 showed the title alone at 0.5 s, both clips with the green card on top at 1.5 s, and only the green card at 2.5 s. On the tested desktop, preview glyph bounds differed from the native reference by up to 4 px and decoded bounds by up to 5 px. Preview and decoded bounds agreed within 1 px. All four solid-color probes matched the native reference in preview, and the largest decoded channel difference was 6/255. Generic fonts depend on the local renderer. The inspector identifies rejected inline properties, including `filter`, before export and keeps the provided HTML. Storyboard **Run all** exported the warmed composition offline with zero HTTP requests.
+
+Both consumers can discover both versioned profiles offline. Graph advertises its browser import route. Trading advertises its replay route and lists the missing requirements for live quotes until the host has qualified the SDK, session and symbol entitlement.
+
+Replay tests exercise both, one or neither quote side. A separate single read of HK.00700 on the existing $0 Hong Kong LV1 entitlement returned positive `bidPrice` and `askPrice` and a UTC timestamp. This establishes field availability for that snapshot only. Feed attribution, delay and depth remain unverified. The shared observation omits prices and account details.

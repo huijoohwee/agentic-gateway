@@ -1,4 +1,8 @@
 import test from 'node:test';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { discoverProviderProfiles } from '../provider-profiles.mjs';
+import { validateManifest } from '../resolver.mjs';
 import assert from 'node:assert/strict';
 import { bindMoomooSnapshot, replayMoomooSnapshot } from '../connectors/moomoo.mjs';
 import { importHyperframesHtml } from '../connectors/hyperframes.mjs';
@@ -17,7 +21,7 @@ test('one SDK read binds the leading-zero ID and consumes concurrent admission',
   } }, grant());
   const [ok, denied] = await Promise.allSettled([read(),read()]);
   assert.equal(calls,1); assert.match(denied.reason.message,/EXHAUSTED/);
-  assert.deepEqual(ok.value, { provider:'moomoo', symbol, evidence:'sdk-response', price:'302.25',
+  assert.deepEqual(ok.value, { provider:'moomoo', symbol, evidence:'sdk-response', price:'302.25', bid:null, ask:null,
     pricePrecision:'provider-double', currency:null, delayClass:'unknown', suspended:false, marketTimeUtc:'2023-11-14T22:13:20.125Z' });
 });
 
@@ -35,4 +39,29 @@ test('snapshot errors and unavailable metadata stay explicit', async () => {
 
 test('video byte limit is enforced before allocating a DOM', () => {
   assert.throws(() => importHyperframesHtml('界'.repeat(43000)), /too large/);
+});
+
+test('each optional quote side preserves only a positive provider price', () => {
+  const project = fields => replayMoomooSnapshot(symbol, response(Object.assign(Object.create({bidPrice:123}),row,fields)));
+  assert.deepEqual([project({askPrice:302.4}).bid, project({askPrice:302.4}).ask], [null,'302.4']);
+  assert.deepEqual([project({bidPrice:302,askPrice:0}).bid, project({bidPrice:302,askPrice:0}).ask], ['302',null]);
+  for (const bidPrice of [-1,Infinity,'302']) assert.throws(() => project({bidPrice}), /INVALID_SNAPSHOT/);
+});
+
+test('offline discovery checks pinned contract bytes and lists unmet route requirements without dispatch', () => {
+  const records = discoverProviderProfiles(['browser-dom','hyperframes-importer','snapshot-replay','opend-reader']);
+  assert.equal(records.length,2);
+  for (const {manifest} of records) {
+    const {schemaDigest,revision,...schema} = manifest;
+    assert.equal(createHash('sha256').update(JSON.stringify(schema)).digest('hex'),schemaDigest);
+    const name = manifest.id === 'media/hyperframes-import' ? 'hyperframes' : 'moomoo';
+    const source = readFileSync(new URL('../connectors/'+name+'.mjs',import.meta.url));
+    assert.equal(createHash('sha1').update('blob '+source.length+'\0').update(source).digest('hex'),revision);
+    assert.ok(Object.isFrozen(manifest.requirements[manifest.routes[0]]));
+    assert.throws(() => validateManifest({...manifest,requirements:{}}));
+  }
+  assert.equal(records[0].routes[0].available,true);
+  assert.equal(records[1].routes[0].available,true);
+  assert.deepEqual(records[1].routes[1].missing,['qualified-sdk','signed-in-loopback','symbol-entitled-at-zero-cost']);
+  assert.ok(discoverProviderProfiles().every(record => record.routes.every(route => !route.available)));
 });

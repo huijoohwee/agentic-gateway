@@ -17,7 +17,20 @@ export function validateManifest(m) {
       || new Set(m[key]).size !== m[key].length) throw new TypeError('Invalid manifest list ' + key);
   }
   if (!m.routes.length || m.locality !== 'device') throw new TypeError('Expected a local qualification route');
-  return Object.freeze({ ...m, ...Object.fromEntries(lists.map(k => [k, Object.freeze([...m[k]])])) });
+  const validated = { ...m, ...Object.fromEntries(lists.map(k => [k, Object.freeze([...m[k]])])) };
+  if (m.requirements !== undefined) {
+    if (!m.requirements || typeof m.requirements !== 'object' || Array.isArray(m.requirements) ||
+        Object.keys(m.requirements).length !== m.routes.length) throw new TypeError('Expected requirements for every route');
+    validated.requirements = Object.freeze(Object.fromEntries(m.routes.map(route => {
+      const facts = m.requirements[route];
+      if (!Object.hasOwn(m.requirements,route) || !Array.isArray(facts) ||
+          !facts.every(fact => typeof fact === 'string' && fact.length > 0) || new Set(facts).size !== facts.length) {
+        throw new TypeError('Invalid requirements for ' + route);
+      }
+      return [route, Object.freeze([...facts])];
+    })));
+  }
+  return Object.freeze(validated);
 }
 
 export function createResolver(entries) {
@@ -38,8 +51,18 @@ export function createResolver(entries) {
     return { ok: true, m, binding };
   }
   return {
-    discover() {
-      return catalog.map(({ m, bindings }) => ({ manifest: m, configuredRoutes: m.routes.filter(r => configured(bindings[r])) }));
+    discover(hostFacts) {
+      const facts = hostFacts === undefined ? null : new Set(hostFacts);
+      return catalog.map(({ m, bindings }) => {
+        const entry = { manifest: m, configuredRoutes: m.routes.filter(route => configured(bindings[route])) };
+        if (facts && m.requirements) {
+          entry.routes = m.routes.map(route => {
+            const missing = m.requirements[route].filter(fact => !facts.has(fact));
+            return { route, available: missing.length === 0, missing };
+          });
+        }
+        return entry;
+      });
     },
     async invoke(request, nativeRequest, grant) {
       const decision = resolve(request);

@@ -19,3 +19,9 @@ Import `agentic-gateway/connectors/hyperframes` for standalone declarative HTML.
 Import `agentic-gateway/connectors/moomoo` to project a one-symbol OpenD snapshot. `replayMoomooSnapshot(symbol, response)` labels local evidence as replay. `bindMoomooSnapshot(client, grant)` accepts an authenticated quote client and an explicit one-read entitlement with a zero USD cost and expiry. The host supplies that evidence and selects the online read. The optional Python bridge uses the operator’s local OpenD and separately installed SDK.
 
 [Qualified features, losses and verification](qualification/provider-handoff.md)
+
+### Offline provider discovery
+
+`discoverProviderProfiles(hostFacts)` from `agentic-gateway/provider-profiles` loads metadata only. The optional gateway module registers both manifests with the existing resolver. Each entry returns its input, output, features, losses and per-route requirements. The caller supplies only facts it can establish. For example, a Trading process can declare `snapshot-replay` and `opend-reader` without checking a port or reading credentials.
+
+`createResolver(entries).discover(hostFacts)` also assesses any registered manifest with per-route requirements. `available` means the supplied facts satisfy those requirements. Native invocation still applies the host's binding, cost and grant checks. Existing `discover()` callers retain their original response shape. The manifest revision is the connector’s Git blob ID, and its schema digest covers the functional profile and its route requirements. Consumers pin the complete gateway package.

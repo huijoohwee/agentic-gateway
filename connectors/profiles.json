@@ -1,0 +1,74 @@
+[
+  {
+    "id": "media/hyperframes-import",
+    "major": 1,
+    "owner": "agentic-gateway",
+    "operation": "import",
+    "input": "declarative HyperFrames HTML",
+    "output": "scene with editable source and timed clips",
+    "mode": "local",
+    "fidelity": "declarative subset",
+    "locality": "device",
+    "features": [
+      "text",
+      "overlapping clips",
+      "dimensions",
+      "millisecond timing"
+    ],
+    "losses": [
+      "scripts, external assets, audio and nested scenes unsupported",
+      "local fonts can change glyph shapes and text placement",
+      "encoded video is flattened"
+    ],
+    "routes": [
+      "browser"
+    ],
+    "requirements": {
+      "browser": [
+        "browser-dom",
+        "hyperframes-importer"
+      ]
+    },
+    "schemaDigest": "ac06e67d0d452a7eda24dec89fb1efdbaab7dea155c1867680d2c8ea8b7bd4be",
+    "revision": "771cd635aac3173614e4107dd7c061197defcc74"
+  },
+  {
+    "id": "trading/moomoo-snapshot",
+    "major": 1,
+    "owner": "agentic-gateway",
+    "operation": "read",
+    "input": "single HK or US security snapshot",
+    "output": "symbol, last price, optional bid and ask, suspension and optional UTC time",
+    "mode": "read",
+    "fidelity": "provider double",
+    "locality": "device",
+    "features": [
+      "qualified symbol",
+      "last price",
+      "independent bid and ask",
+      "UTC epoch",
+      "suspension"
+    ],
+    "losses": [
+      "decimal scale, currency, feed attribution and delay unknown",
+      "order-book depth unavailable"
+    ],
+    "routes": [
+      "replay",
+      "snapshot"
+    ],
+    "requirements": {
+      "replay": [
+        "snapshot-replay"
+      ],
+      "snapshot": [
+        "opend-reader",
+        "qualified-sdk",
+        "signed-in-loopback",
+        "symbol-entitled-at-zero-cost"
+      ]
+    },
+    "schemaDigest": "aa0414dfffd11137b7a418f223e02209208847b3e0ebb10b7b879790313376a8",
+    "revision": "3f045fde0ade4b0a5b0e1ac3f839a86360994c28"
+  }
+]

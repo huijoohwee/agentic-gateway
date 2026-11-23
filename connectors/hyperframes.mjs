@@ -4,7 +4,7 @@ const tags = new Set(['div', 'section', 'article', 'header', 'footer', 'main', '
 const attrs = new Set(['id', 'class', 'style', 'data-composition-id', 'data-no-timeline', 'data-width',
   'data-height', 'data-start', 'data-duration', 'data-track-index']);
 const properties = new Set(['position','inset','top','left','right','bottom','width','height','display','overflow',
-  'z-index','background-color','color','font-size','font-weight','text-align','line-height','margin','padding',
+  'z-index','background-color','color','font-family','font-size','font-weight','text-align','line-height','margin','padding',
   'align-items','justify-content','box-sizing','opacity']);
 const identifier = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 function reject(reason) { throw new TypeError('HyperFrames: ' + reason); }
@@ -21,7 +21,8 @@ function validateStyle(el) {
   for (const declaration of (el.getAttribute('style') || '').split(';')) {
     if (!declaration.trim()) continue;
     const match = /^\s*([a-z-]+)\s*:\s*([a-z0-9#.% +\-]+)\s*$/i.exec(declaration);
-    if (!match || !properties.has(match[1]) || !el.style.getPropertyValue(match[1])) reject('unsupported inline style');
+    if (match?.[1] === 'font-family' && !['monospace','serif','sans-serif'].includes(match[2].trim().toLowerCase())) reject('unsupported font-family ' + match[2].trim());
+    if (!match || !properties.has(match[1]) || !el.style.getPropertyValue(match[1])) reject('unsupported inline style ' + (declaration.split(':')[0].trim() || 'declaration'));
   }
 }
 
