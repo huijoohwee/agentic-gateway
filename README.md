@@ -8,4 +8,6 @@ Run `npm test` in the source checkout for the portable contract fixtures. The na
 
 ## Prompt presets
 
-The optional `agentic-gateway/presets` export reads a pinned metadata index. Its `list()` operation reads zero prompt bodies. `select(idOrAlias, readBody)` reads a single content-addressed text body, checks its SHA-256, and returns the text and metadata. The host handles explicit submission. The initial projection is generated from the pinned OS catalog with `node tools/project-presets.mjs /path/to/agentic-graph`. OS retains authoring ownership at this stage.
+The optional `agentic-gateway/presets` export reads a pinned metadata index. Its `list()` operation reads zero prompt bodies. `select(idOrAlias, readBody)` reads a single content-addressed text body, checks its SHA-256, and returns the text and metadata. The host handles explicit submission.
+
+Edit shared presets in [catalog/PROMPT-PRESETS.md](catalog/PROMPT-PRESETS.md). Run `npm ci`, `npm run presets:build`, then `npm test`. Commit the authored Markdown and its generated index, pin and body files together. The source revision in the index is the Git blob ID of the Markdown. Consumers pin a gateway commit. The OS compatibility export retains its existing path and refreshes from a gateway commit.
