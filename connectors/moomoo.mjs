@@ -58,3 +58,90 @@ export function bindMoomooSnapshot(client, grant) {
     return projectSnapshot(symbol, response, 'sdk-response');
   };
 }
+
+// Documented moomoo quote push messages (open.moomoo.com ORDER_BOOK / TICKER / KLINE).
+// Provider doubles become decimal text; trade sequence stays opaque because JSON numbers
+// cannot preserve values beyond 2^53. The snapshot manifest describes only the snapshot
+// call, which carries no depth, tape or kline, so these are separate replay projections.
+const directions = new Set(['BUY', 'SELL', 'NEUTRAL']);
+
+function messageData(symbol, response, type) {
+  securityFor(symbol);
+  if (response?.type !== type || response.symbol !== symbol) throw Error('SECURITY_MISMATCH');
+  const data = response.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('INVALID_SNAPSHOT');
+  return data;
+}
+
+function utcFromMs(value) {
+  if (value == null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 8.64e15) {
+    throw Error('INVALID_MARKET_TIME');
+  }
+  return new Date(Math.round(value)).toISOString();
+}
+
+function decimal(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) throw Error('INVALID_SNAPSHOT');
+  return String(value);
+}
+
+function amount(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw Error('INVALID_SNAPSHOT');
+  return String(value);
+}
+
+function quantity(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw Error('INVALID_SNAPSHOT');
+  return value;
+}
+
+function levels(list) {
+  if (!Array.isArray(list)) throw Error('INVALID_SNAPSHOT');
+  return list.map(level => ({
+    price: decimal(level?.price), volume: quantity(level?.volume), orderCount: quantity(level?.order_count),
+  }));
+}
+
+export function replayMoomooOrderBook(symbol, response) {
+  const data = messageData(symbol, response, 'ORDER_BOOK');
+  return {
+    provider: 'moomoo', evidence: 'replay', symbol,
+    bids: levels(data.bid_list), asks: levels(data.ask_list),
+    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+    marketTimeUtc: utcFromMs(data.data_time_ms),
+  };
+}
+
+export function replayMoomooTicker(symbol, response) {
+  const data = messageData(symbol, response, 'TICKER');
+  if (!Array.isArray(data.ticker_list)) throw Error('INVALID_SNAPSHOT');
+  const ticks = data.ticker_list.map(tick => {
+    if (!directions.has(tick?.direction)) throw Error('INVALID_SNAPSHOT');
+    return {
+      marketTimeUtc: utcFromMs(tick.time_ms), direction: tick.direction,
+      price: decimal(tick.price), volume: quantity(tick.volume), turnover: amount(tick.turnover),
+    };
+  });
+  return {
+    provider: 'moomoo', evidence: 'replay', symbol, ticks,
+    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+  };
+}
+
+export function replayMoomooKline(symbol, response) {
+  const data = messageData(symbol, response, 'KLINE');
+  if (typeof data.period !== 'string' || typeof data.adjust !== 'string' || !Array.isArray(data.kl_list)) {
+    throw Error('INVALID_SNAPSHOT');
+  }
+  const bars = data.kl_list.map(bar => ({
+    marketTimeUtc: utcFromMs(bar.time_ms),
+    open: decimal(bar.open_price), high: decimal(bar.high_price),
+    low: decimal(bar.low_price), close: decimal(bar.close_price),
+    volume: quantity(bar.volume), turnover: amount(bar.turnover),
+  }));
+  return {
+    provider: 'moomoo', evidence: 'replay', symbol, period: data.period, adjust: data.adjust, bars,
+    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+  };
+}
