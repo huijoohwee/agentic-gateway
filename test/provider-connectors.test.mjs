@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { discoverProviderProfiles } from '../provider-profiles.mjs';
 import { validateManifest } from '../resolver.mjs';
 import assert from 'node:assert/strict';
-import { bindMoomooSnapshot, replayMoomooSnapshot } from '../connectors/moomoo.mjs';
+import { bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
 import { importHyperframesHtml } from '../connectors/hyperframes.mjs';
 
 const symbol = 'HK.00700';
@@ -64,4 +64,47 @@ test('offline discovery checks pinned contract bytes and lists unmet route requi
   assert.equal(records[1].routes[0].available,true);
   assert.deepEqual(records[1].routes[1].missing,['qualified-sdk','signed-in-loopback','symbol-entitled-at-zero-cost']);
   assert.ok(discoverProviderProfiles().every(record => record.routes.every(route => !route.available)));
+});
+
+const book = { type: 'ORDER_BOOK', symbol, data: { data_time_ms: 1700000000000,
+  bid_list: [{ price: 343.8, volume: 800, order_count: 2 }],
+  ask_list: [{ price: 344, volume: 1000, order_count: 3 }] } };
+
+test('order-book replay projects documented bid/ask levels as decimal text', () => {
+  const projected = replayMoomooOrderBook(symbol, book);
+  assert.deepEqual(projected.bids, [{ price: '343.8', volume: 800, orderCount: 2 }]);
+  assert.deepEqual(projected.asks, [{ price: '344', volume: 1000, orderCount: 3 }]);
+  assert.equal(projected.marketTimeUtc, '2023-11-14T22:13:20.000Z');
+  assert.equal(projected.pricePrecision, 'provider-double');
+  assert.equal(projected.currency, null);
+  assert.throws(() => replayMoomooOrderBook('US.AAPL', book), /SECURITY_MISMATCH/);
+  assert.throws(() => replayMoomooOrderBook(symbol, { ...book, type: 'TICKER' }), /SECURITY_MISMATCH/);
+  assert.throws(() => replayMoomooOrderBook(symbol, { ...book, data: { ...book.data, data_time_ms: -1 } }), /INVALID_MARKET_TIME/);
+  const badLevel = { ...book, data: { ...book.data, bid_list: [{ price: NaN, volume: 1, order_count: 1 }] } };
+  assert.throws(() => replayMoomooOrderBook(symbol, badLevel), /INVALID_SNAPSHOT/);
+});
+
+test('ticker replay keeps direction and price but leaves sequence opaque', () => {
+  const tape = { type: 'TICKER', symbol, data: { ticker_list: [
+    { time_ms: 1700000000123, sequence: 9007199254740993, direction: 'BUY', price: 344, volume: 100, turnover: 34400, type: 'NORMAL' }] } };
+  const [tick] = replayMoomooTicker(symbol, tape).ticks;
+  assert.deepEqual(tick, { marketTimeUtc: '2023-11-14T22:13:20.123Z', direction: 'BUY', price: '344', volume: 100, turnover: '34400' });
+  assert.ok(!Object.hasOwn(tick, 'sequence'));
+  const badDirection = { ...tape, data: { ticker_list: [{ ...tape.data.ticker_list[0], direction: 'SIDEWAYS' }] } };
+  assert.throws(() => replayMoomooTicker(symbol, badDirection), /INVALID_SNAPSHOT/);
+  assert.throws(() => replayMoomooTicker(symbol, { ...tape, data: {} }), /INVALID_SNAPSHOT/);
+});
+
+test('kline replay projects OHLC decimal text and declares period/adjust', () => {
+  const candles = { type: 'KLINE', symbol, data: { period: '1D', adjust: 'none', kl_list: [
+    { time_ms: 1700000000000, open_price: 386.6, high_price: 388, low_price: 333, close_price: 344, volume: 35289665, turnover: 11960782218 }] } };
+  const projected = replayMoomooKline(symbol, candles);
+  assert.equal(projected.period, '1D');
+  assert.equal(projected.adjust, 'none');
+  assert.deepEqual(projected.bars, [{ marketTimeUtc: '2023-11-14T22:13:20.000Z',
+    open: '386.6', high: '388', low: '333', close: '344', volume: 35289665, turnover: '11960782218' }]);
+  assert.throws(() => replayMoomooKline(symbol, { ...candles, data: { ...candles.data, period: undefined } }), /INVALID_SNAPSHOT/);
+  const badClose = { ...candles, data: { ...candles.data, kl_list: [{ ...candles.data.kl_list[0], close_price: 0 }] } };
+  assert.throws(() => replayMoomooKline(symbol, badClose), /INVALID_SNAPSHOT/);
+  assert.throws(() => replayMoomooKline('SH.600000', candles), /UNSUPPORTED_SECURITY/);
 });
