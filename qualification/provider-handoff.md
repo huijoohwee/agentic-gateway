@@ -1,0 +1,16 @@
+# Provider handoff qualification
+
+| Handoff | Evidence and preserved features | Limits |
+|---|---|---|
+| HyperFrames 0.9.85 → Graph | The upstream CLI accepted the [authored composition](hyperframes/index.html) with zero lint findings. Its timeline listed two 500 ms clips on track 0. Upstream 64 × 64 PNGs sampled at 0.10 and 0.75 s gave RGB (255,0,0) and (0,0,255). Graph Storyboard **Run all** imported the same document and produced a 1,117-byte MP4. Its decoded center pixels were (254,1,1) and (0,0,251) at those times. Desktop Chromium made zero HTTP requests during the warm-cache offline export. | A flattened MP4 carries pixels and relative timing. IDs, track indices and text remain in the source. The host chooses frame rate and codec. Browser recording and compression can change frame timestamps and colors. Editable project export, script-driven GSAP, stylesheets, audio, linked assets and nested scenes are outside this profile. |
+| moomoo OpenAPI 10.12.7208 → Trading | The official JavaScript SDK encoded and decoded a synthetic 13-byte snapshot request and 149-byte response. Trading replay preserved the market-qualified ID including its leading zeros, last price, suspension flag and UTC epoch down to milliseconds. An independently observed live Trading CLI call used a signed-in Visual OpenD 10.12.7208 over loopback port 11112 and existing Hong Kong LV1 rights. The single HK.00700 response supplied the requested ID, positive price, UTC epoch and suspension flag. No purchase, subscription or trade was made. The live price and raw provider response were omitted from shared artifacts. | The provider supplies a binary double. Display text cannot recover original decimal scale. Currency and feed delay are unknown. Historical updateTime alone cannot establish UTC. A replay, connection status or quote does not confer trading or redistribution rights. |
+
+## Reproduction
+
+Follow the [video fixture](hyperframes/README.md) to compare the two renderers. The gateway package has zero always-loaded provider dependencies. Its single-file video profile accepts one `data-no-timeline` root with integer dimensions and an explicit duration. It accepts direct-child identified clips, numeric start and duration, static text and the inline layout and color properties defined in the connector. Unsupported structures fail before rendering. The original HTML remains available for authoring.
+
+Use Trading’s `npm run quote:moomoo -- replay HK.00700 qualification/moomoo/sdk-replay.json` for the shareable synthetic case. For a private live read the operator selects one entitled symbol and local OpenD port. Treat results as read-only display data. Keep the operator’s session, prices and account information outside public evidence.
+
+HyperFrames is an external Apache-2.0 qualification tool. The moomoo JavaScript SDK declares ISC. Visual OpenD is separately installed vendor software. Neither vendor runtime is bundled in a consumer’s browser. A signed-in local quote session and an offline replay exercise different boundaries. The physical-device test, uncoached timing and buyer pilot remain deferred.
+
+[HyperFrames HTML schema](https://github.com/heygen-com/hyperframes/blob/v0.9.85/docs/reference/html-schema.mdx) · [moomoo market snapshot](https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-market-snapshot.html)

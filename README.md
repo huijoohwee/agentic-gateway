@@ -11,3 +11,11 @@ Run `npm test` in the source checkout for the portable contract fixtures. The na
 The optional `agentic-gateway/presets` export reads a pinned metadata index. Its `list()` operation reads zero prompt bodies. `select(idOrAlias, readBody)` reads a single content-addressed text body, checks its SHA-256, and returns the text and metadata. The host handles explicit submission.
 
 Edit shared presets in [catalog/PROMPT-PRESETS.md](catalog/PROMPT-PRESETS.md). Run `npm ci`, `npm run presets:build`, then `npm test`. Commit the authored Markdown and its generated index, pin and body files together. The source revision in the index is the Git blob ID of the Markdown. Consumers pin a gateway commit. The OS compatibility export retains its existing path and refreshes from a gateway commit.
+
+## Optional provider connectors
+
+Import `agentic-gateway/connectors/hyperframes` for standalone declarative HTML. Pass the source and a browser document to `importHyperframesHtml` to get inspected HTML, composition identity, dimensions, duration in milliseconds and ordered clip intervals. The host applies clip visibility at each seek. The authored HTML remains the editable source.
+
+Import `agentic-gateway/connectors/moomoo` to project a one-symbol OpenD snapshot. `replayMoomooSnapshot(symbol, response)` labels local evidence as replay. `bindMoomooSnapshot(client, grant)` accepts an authenticated quote client and an explicit one-read entitlement with a zero USD cost and expiry. The host supplies that evidence and selects the online read. The optional Python bridge uses the operator’s local OpenD and separately installed SDK.
+
+[Qualified features, losses and verification](qualification/provider-handoff.md)
