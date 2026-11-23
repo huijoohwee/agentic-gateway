@@ -1,0 +1,41 @@
+{
+  "name": "agentic-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local capability discovery and invocation with native adapters",
+  "exports": {
+    ".": "./resolver.mjs",
+    "./presets": "./presets.mjs",
+    "./catalog/index.json": "./catalog/index.json",
+    "./catalog/pin.json": "./catalog/pin.json",
+    "./catalog/bodies/*.txt": "./catalog/bodies/*.txt"
+  },
+  "files": [
+    "resolver.mjs",
+    "README.md",
+    "presets.mjs",
+    "catalog"
+  ],
+  "scripts": {
+    "test": "node --test test/resolver.test.mjs test/presets.test.mjs",
+    "setup": "agentic-os setup",
+    "doctor": "agentic-os doctor",
+    "lane": "agentic-os start",
+    "land": "agentic-os land",
+    "successor": "agentic-os successor",
+    "release:common": "agentic-os release-common",
+    "sync:canonical": "agentic-os canonical-sync"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/huijoohwee/agentic-gateway.git"
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "devDependencies": {
+    "agentic-os": "https://codeload.github.com/huijoohwee/agentic-os/tar.gz/f5cca6b1cd0d7bd16a0dd57abba35996262c481f"
+  }
+}

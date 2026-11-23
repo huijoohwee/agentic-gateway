@@ -1,0 +1,38 @@
+{
+  "schema": "agentic-os/repository-profile/v1",
+  "repository": "github.com/huijoohwee/agentic-gateway",
+  "canonical": {
+    "localRef": "refs/heads/main",
+    "remoteRef": "refs/remotes/origin/main"
+  },
+  "adapters": {
+    "repository": {
+      "id": "git",
+      "version": "1"
+    },
+    "provider": {
+      "id": "github",
+      "version": "1"
+    }
+  },
+  "requiredChecks": [
+    "Integration Gate"
+  ],
+  "capabilities": [
+    "protected-integration:pull-request",
+    "remove-clean-worktree-cleanup-opt-in"
+  ],
+  "authority": {
+    "runtime": "consumer",
+    "release": "consumer"
+  },
+  "cleanup": {
+    "localBranch": "retain",
+    "remoteBranch": "retain",
+    "remoteTrackingRef": "retain",
+    "unreachableObjects": "retain",
+    "worktreeProjection": "remove-clean",
+    "worktreeRegistration": "remove-clean"
+  },
+  "profileDigest": "3646d9750ae9fbd0052f8f0d3496a56e303a8d0408bf277980c4b3cd7bcfe58c"
+}
