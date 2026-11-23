@@ -8,6 +8,12 @@ function securityFor(symbol) {
   return { market: markets[match[1]], code: match[2] };
 }
 
+function sidePrice(row, key) {
+  if (!Object.hasOwn(row, key) || row[key] == null || row[key] === 0) return null;
+  if (!Number.isFinite(row[key]) || row[key] < 0) throw Error('INVALID_SNAPSHOT');
+  return String(row[key]);
+}
+
 function projectSnapshot(symbol, response, evidence) {
   const security = securityFor(symbol);
   if (response?.retType !== 0 || (response.errCode != null && response.errCode !== 0)) {
@@ -26,6 +32,7 @@ function projectSnapshot(symbol, response, evidence) {
   }
   return {
     provider: 'moomoo', evidence, symbol, price: String(row.curPrice),
+    bid: sidePrice(row, 'bidPrice'), ask: sidePrice(row, 'askPrice'),
     pricePrecision: 'provider-double', currency: null, marketTimeUtc,
     delayClass: 'unknown', suspended: row.isSuspend,
   };
