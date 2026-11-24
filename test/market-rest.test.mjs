@@ -15,7 +15,7 @@ const tapeRow = { sequence: '7647056964060558023', price: '465.800', volume: '35
 const candle = { code: symbol, date: 20240229, time_key: 1780243200000, open_price: 12, close_price: 10, low_price: 8,
   high_price: 13, volume: 0, turnover: 0, change_rate: '-1.230' };
 
-test('the four native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
+test('the native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
   for (const [name, route] of Object.entries(marketRestRoutes)) assert.equal(catalog.tools.find(t => t.name === name).http, route);
   assert.deepEqual(build(quote, { symbols: [symbol, 'US.AAPL'] }), { method: 'POST', path: '/api/v1.0/quote/stock-quote', body: { code_list: [symbol, 'US.AAPL'] } });
   assert.deepEqual(build(depth, { symbol, count: 60 }), { method: 'POST', path: '/api/v1.0/quote/order-book', body: { code: symbol, num: 60 } });
@@ -84,4 +84,57 @@ test('malformed, oversize and refused wire results fail before returning rows', 
     ['{"ret_code":-3}', 'INVALID_PARAMETER'], ['{"ret_code":-7}', 'INVALID_SYMBOL'], ['{"ret_code":200}', 'PROVIDER_ERROR']]) {
     assert.throws(() => project(tape, { symbol }, input), new RegExp(code));
   }
+});
+
+const history = 'quote_history_kline';
+const historical = { symbol: 'US.QQQ', start: '2026-11-09', end: '2026-11-10', ktype: 1 };
+const instant = Date.parse('2026-11-09T15:30:00Z');
+const historyBar = { time_key: instant, date: 20261109, time_zone: -300, open: '20.00', high: '25.50',
+  low: '18.25', close: '24.50', last_close: '19.0', volume: '9007199254740993', turnover: 20, settle_price: '24.50' };
+const pageToken = '12345678'.repeat(6);
+function historyWire(bars, pagination = { has_more: false }, metadata = {}) {
+  return JSON.stringify({ ret_code: 0, data: { kline_list: bars, ...metadata }, pagination });
+}
+
+test('historical requests preserve market-local bounds and both documented continuation modes', () => {
+  const path = '/api/v1.0/quote/US.QQQ/history-kline?';
+  assert.equal(build(history, historical).path, path + 'start=2026-11-09&end=2026-11-10&ktype=1');
+  assert.equal(build(history, { symbol: 'US.QQQ', page_token: pageToken, ktype: 115, count: 1 }).path,
+    path + 'page_token=' + pageToken + '&ktype=115&num=1');
+  assert.equal(build(history, { symbol: 'US.QQQ', next_time: instant }).path, path + 'next_time=' + instant);
+  for (const patch of [{ start: '2026-02-29' }, { end: '' }, { extended_time: 1, symbol: 'HK.00700' },
+    { autype: 4 }, { ktype: 100 }, { count: 371 }, { next_time: 2.5 }, { page_token: 'short' }])
+    assert.throws(() => build(history, { ...historical, ...patch }), /INVALID_PARAMETER/);
+});
+
+test('historical bars retain wire precision, optional metadata and independently bounded backward pages', () => {
+  const metadata = { volume_precision: 3, next_time: instant };
+  const more = { has_more: true, next_page_token: pageToken };
+  const wire = historyWire([historyBar], more, metadata).replace('"24.50"', '24.500000000000000001');
+  const result = project(history, historical, wire);
+  assert.equal(result.rows[0].close, '24.500000000000000001');
+  assert.equal(result.rows[0].volume, '9007199254740.993');
+  assert.equal(result.rows[0].market_date, '2026-11-09');
+  assert.equal(result.rows[0].utc_offset_minutes, -300);
+  assert.deepEqual(result.pagination, { has_more: true, next_page_token: pageToken, next_time: instant });
+  const missing = project(history, historical, historyWire([{ ...historyBar, date: null, time_zone: null }])).rows[0];
+  assert.deepEqual([missing.market_date, missing.utc_offset_minutes, missing.volume], [null, null, null]);
+  assert.equal(missing.raw_volume, '9007199254740993');
+  assert.equal(project(history, historical, historyWire([historyBar], { has_more: true }, metadata)).pagination.next_time, instant);
+  assert.deepEqual(project(history, historical, historyWire([])).rows, []);
+  for (const [params, response, reason] of [
+    [historical, historyWire([historyBar, historyBar]), /INVALID_PAGE/],
+    [historical, historyWire([], more), /INVALID_PAGE/],
+    [historical, historyWire([historyBar], { has_more: true }), /INVALID_PAGE/],
+    [historical, historyWire([historyBar], { has_more: false }, metadata), /INVALID_PAGE/],
+    [historical, historyWire([historyBar], more, { next_time: instant + 1 }), /CURSOR_MISMATCH/],
+    [{ ...historical, next_time: instant }, wire, /CURSOR_MISMATCH/],
+    [{ ...historical, page_token: pageToken }, wire, /CURSOR_MISMATCH/],
+    [{ ...historical, end: '2026-11-09' }, wire, /DATE_RANGE_MISMATCH/],
+    [historical, historyWire([{ ...historyBar, code: 'US.OTHER' }]), /SECURITY_MISMATCH/],
+  ]) assert.throws(() => project(history, params, response), reason);
+  assert.equal(project(history, { ...historical, end: '2026-11-09', ktype: 2 }, wire).rows.length, 1);
+  for (const [code, reason] of [[-8, 'UNSUPPORTED'], [-11, 'RATE_LIMITED'], [-12, 'HISTORY_QUOTA_EXCEEDED'], [-13, 'QUOTA_UNAVAILABLE']])
+    assert.throws(() => project(history, historical, JSON.stringify({ ret_code: code })), new RegExp(reason));
+  assert.throws(() => project(history, historical, '{"ret_code":-3,"error":{"code":"invalid_page_token"}}'), /INVALID_PAGE_TOKEN/);
 });
