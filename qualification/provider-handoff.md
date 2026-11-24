@@ -43,7 +43,7 @@ The projected factors are last_price, market_cap, annual_pe, pe_ttm, price_to_bo
 
 ## Stock quotes, order books, tape and candles over REST
 
-The `agentic-gateway/connectors/moomoo-market-rest` export builds five fixed market requests and projects their raw JSON response text offline. Use `buildMoomooMarketRequest(tool, inputs)` for the method, path and optional body. Use `projectMoomooMarketResponse(tool, inputs, responseText)` with the same selectors. The host owns authentication and any network call.
+The `agentic-gateway/connectors/moomoo-market-rest` export builds fixed market requests and projects their raw JSON response text offline. Use `buildMoomooMarketRequest(tool, inputs)` for the method, path and optional body. Use `projectMoomooMarketResponse(tool, inputs, responseText)` with the same selectors. The host owns authentication and any network call.
 
 Stock quotes accept one symbol or a list of up to 400. Books retain each exchange, both side flags and up to 60 levels per side. Tape accepts up to 750 prints and repeats the session query key when two or more sessions are selected. A current candle request takes 1–370 bars and records its requested interval, adjustment, extended hours and outcome side.
 
@@ -52,6 +52,10 @@ Pass the original response text to preserve numeric literals. The tape example c
 Use `quote_market_state` to inspect the reported session for one symbol or a batch. Extended US hours and crypto broker expansion are explicit request flags. Results retain each broker, the provider’s state text and any reported schedule. Use `quote_trading_days` for an inclusive market-local date window. Retain the reported session type alongside the trading seconds, including when a half day and full day report the same duration. Empty calendars are valid. [Market State](https://open.moomoo.com/api/quote/basic-data/market-state) · [Trading Days](https://open.moomoo.com/api/quote/basic-data/trading-days)
 
 For historical bars, pass `quote_history_kline` with the symbol, a market-local end date or backward cursor, and the desired selectors. An intraday end date stops at local midnight. Daily bars include the end date. The result preserves OHLC price digits, the raw volume and its reported scale. Missing market date, UTC offset and volume precision remain unknown. Treat the reported settlement field as a settlement price only for eligible derivatives. A page with more results carries a provider token, a backward millisecond cursor or both. Prefer the token while valid and reauthorize the next read with the original query dimensions. The first nonempty page can consume a historical quota slot. [History K-Line](https://open.moomoo.com/api/quote/basic-data/history-kline)
+
+## Private watchlist reads
+
+Use `buildMoomooWatchlistRequest` and `projectMoomooWatchlistResponse` from the same module with the same tool and selectors. The directory accepts an optional `group_type`. Membership takes the exact `group_name` returned by the directory, including spaces and non-Latin characters. An empty membership list is a successful read. Security IDs and strike prices retain their digits. The result records the requested selector separately because the membership response does not repeat the group name. A host that dispatches these reads must bind the selected user identity, selector and display rights. The Gateway examples and tests use public documentation or synthetic records. [Watchlist groups](https://open.moomoo.com/api/quote/watchlist/user-security-group) · [Watchlist members](https://open.moomoo.com/api/quote/watchlist/user-security)
 
 ## Private trade-event file replay
 
