@@ -12,6 +12,7 @@
     "./catalog/bodies/*.txt": "./catalog/bodies/*.txt",
     "./connectors/moomoo-quote-socket": "./connectors/moomoo-quote-socket.mjs",
     "./connectors/moomoo-trade-event": "./connectors/moomoo-trade-event.mjs",
+    "./connectors/moomoo-watchlist": "./connectors/moomoo-watchlist.mjs",
     "./connectors/moomoo-market-rest": "./connectors/moomoo-market-rest.mjs",
     "./connectors/moomoo-stock-screen": "./connectors/moomoo-stock-screen.mjs",
     "./connectors/moomoo": "./connectors/moomoo.mjs",
