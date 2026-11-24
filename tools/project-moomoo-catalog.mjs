@@ -13,6 +13,9 @@ function docRoutes(path, markdown) {
   for (const match of markdown.matchAll(/^(GET|POST|PUT|PATCH|DELETE) `(\/[^\s`]+)`/gm)) {
     routes.add(match[1] + ' ' + match[2]);
   }
+  for (const match of markdown.matchAll(/^<Badge type="[a-z]+" text="(GET|POST|PUT|PATCH|DELETE)" \/> `(\/api\/v[\d.]+\/[\w{}./-]+)`$/gm)) {
+    routes.add(match[1] + ' ' + match[2]);
+  }
   // Overview examples can introduce an API without a method/path heading.
   if (path.includes('/overview')) {
     for (const match of markdown.matchAll(/curl -X (GET|POST|PUT|PATCH|DELETE) ['"]https:\/\/webapi\.moomoo\.com(\/[^?'"\s]+)/g)) {
@@ -83,6 +86,33 @@ export async function projectCatalog(mirror, published, observed) {
     sources: [...sources.values()].sort((a, b) => compare(a.path, b.path)), tools };
 }
 
+// The public Markdown snapshot supplements the original import observations.
+export async function projectReferences(catalog, directory) {
+  const capture = JSON.parse(await readFile(resolve(directory, 'observation.json'), 'utf8'));
+  const date = capture.observed_utc?.slice(0, 10);
+  const missing = catalog.sources.filter(row => row.imported === false);
+  if (catalog.origin !== origin || capture.source_index !== catalog.index_sha256 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(capture.sources) ||
+      capture.sources.length !== missing.length) throw Error('REFERENCE_INDEX_DRIFT');
+  const captured = new Map(capture.sources.map(entry => [entry.path, entry]));
+  const sources = [];
+  for (const row of catalog.sources) {
+    if (row.imported !== false) { sources.push(row); continue; }
+    const file = (row.path.endsWith('/') ? row.path + 'index' : row.path).slice(1) + '.md';
+    const entry = captured.get(row.path);
+    if (!/^(?:[\w-]+\/)*[\w-]+\.md$/.test(file) || entry?.status !== 'reviewed-source' ||
+        entry.file !== file || !Number.isSafeInteger(entry.bytes) || entry.bytes < 1 || entry.bytes > 256000) {
+      throw Error('REFERENCE_FILE_DRIFT: ' + row.path);
+    }
+    const bytes = await readFile(resolve(directory, file));
+    const markdown = bytes.toString('utf8');
+    if (bytes.length !== entry.bytes || digest(bytes) !== entry.sha256 ||
+        !/^---\r?\n[\s\S]*?^title: .+?\r?\n[\s\S]*?^---$/m.test(markdown)) throw Error('REFERENCE_CONTENT_DRIFT: ' + row.path);
+    sources.push({ ...row, reference: { file, sha256: entry.sha256, routes: docRoutes(row.path, markdown) } });
+  }
+  return { ...catalog, reference_observed: date, sources };
+}
+
 // One record per line keeps changes reviewable and the catalog below the file and chunk caps.
 export function serializeCatalog({ sources, tools, ...meta }) {
   const rows = list => '[\n' + list.map(row => '    ' + JSON.stringify(row)).join(',\n') + '\n  ]';
@@ -149,11 +179,29 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 }
 
 async function catalogCommand(args) {
-  const [mirror, capture, date, option] = args;
-  if (!mirror || !capture || !date || option && option !== '--check') throw Error('Usage: project-moomoo-catalog MIRROR PUBLIC_DIRECTORY_JSON YYYY-MM-DD [--check]');
   const output = new URL('../connectors/moomoo-catalog.json', import.meta.url);
-  const body = serializeCatalog(await projectCatalog(mirror, await readFile(capture), date));
+  const check = args.at(-1) === '--check';
+  if (check) args = args.slice(0, -1);
+  const reference = args.at(-2) === '--references' ? args.pop() : undefined;
+  if (reference) args.pop();
+  if (args.length !== 3 && !(args.length === 0 && reference)) {
+    throw Error('Usage: [MIRROR DIRECTORY.json YYYY-MM-DD] [--references PUBLIC_MARKDOWN_DIR] [--check]');
+  }
+  const saved = await readFile(output, 'utf8').catch(error => {
+    if (error.code !== 'ENOENT' || check || !args.length) throw error;
+    return null;
+  });
+  const existing = saved ? JSON.parse(saved) : { sources: [] };
+  const { reference_observed, ...base } = existing;
+  base.sources = base.sources.map(({ reference, ...row }) => row);
+  const [mirror, capture, date] = args;
+  const original = mirror ? await projectCatalog(mirror, await readFile(capture), date) : base;
+  if (!reference && reference_observed) {
+    if (serializeCatalog(base) !== serializeCatalog(original)) throw Error('CATALOG_DRIFT');
+    return;
+  }
+  const body = serializeCatalog(reference ? await projectReferences(original, reference) : original);
   if (Buffer.byteLength(body) >= 500000 || body.split('\n').length >= 600) throw Error('CATALOG_BUDGET');
-  if (!option) await writeFile(output, body);
+  if (!check) await writeFile(output, body);
   else if (await readFile(output, 'utf8') !== body) throw Error('CATALOG_DRIFT');
 }
