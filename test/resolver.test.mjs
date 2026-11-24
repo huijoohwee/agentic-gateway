@@ -31,3 +31,20 @@ test('accepted loss travels with the native result, and invalid requests never r
   assert.deepEqual(result.losses,['editability']);
   assert.equal(calls,1);
 });
+
+test('route discovery preserves order, duplicate owners and per-route qualification', () => {
+  const entries = [...manifests, manifests[0]].map(manifest => ({ manifest, bindings: {} }));
+  const resolver = createResolver(entries);
+  const full = resolver.discover([]);
+  for (const route of new Set(manifests.flatMap(manifest => manifest.routes))) {
+    assert.deepEqual(resolver.discover([], { route }), full.filter(entry => entry.manifest.routes.includes(route)));
+  }
+  assert.deepEqual(resolver.discover([], { route: 'unlisted' }), []);
+});
+
+test('the portable browser distribution contains the exact installed Base module and license', () => {
+  const installed = new URL(import.meta.resolve('@agentic-base/views-react/record-links'));
+  for (const [local, source] of [['record-links.mjs', installed], ['LICENSE', new URL('../LICENSE', installed)]]) {
+    assert.deepEqual(readFileSync(new URL('../vendor/agentic-base/' + local, import.meta.url)), readFileSync(source));
+  }
+});
