@@ -10,6 +10,7 @@
     "./catalog/index.json": "./catalog/index.json",
     "./catalog/pin.json": "./catalog/pin.json",
     "./catalog/bodies/*.txt": "./catalog/bodies/*.txt",
+    "./connectors/moomoo-stock-screen": "./connectors/moomoo-stock-screen.mjs",
     "./connectors/moomoo": "./connectors/moomoo.mjs",
     "./connectors/hyperframes": "./connectors/hyperframes.mjs",
     "./connectors/moomoo-opend.py": "./connectors/moomoo-opend.py",
@@ -30,7 +31,7 @@
     "qualification/hyperframes/open-studio/index.html"
   ],
   "scripts": {
-    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs",
+    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs",
     "setup": "agentic-os setup",
     "doctor": "agentic-os doctor",
     "lane": "agentic-os start",
