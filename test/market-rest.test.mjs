@@ -138,3 +138,43 @@ test('historical bars retain wire precision, optional metadata and independently
     assert.throws(() => project(history, historical, JSON.stringify({ ret_code: code })), new RegExp(reason));
   assert.throws(() => project(history, historical, '{"ret_code":-3,"error":{"code":"invalid_page_token"}}'), /INVALID_PAGE_TOKEN/);
 });
+
+test('market state binds the entire symbol batch and distinguishes expanded crypto broker rows', () => {
+  const tool = 'quote_market_state', stock = 'US.AAPL', crypto = 'CC.BTCUSD';
+  const inputs = { symbols: [stock, crypto], is_contain_ba: true, is_contain_overnight: false, is_need_crypto_multi_broker: true };
+  assert.deepEqual(build(tool, inputs), { method: 'POST', path: '/api/v1.0/quote/market-state',
+    body: { code_list: [stock, crypto], is_contain_ba: true, is_contain_overnight: false, is_need_crypto_multi_broker: true } });
+  const equity = { code: stock, market_state: 'AFTER_HOURS_END', stock_name: 'Apple', total_seconds: '014400' };
+  const first = { code: crypto, market_state: 'FUTURE_STATE', broker_id: 0, broker_ids: '0,7', time_date: 20261124 };
+  const second = { ...first, broker_id: 7, market_state: 'NONE' };
+  const page = (items, args = inputs) => project(tool, args, wire({ market_state_list: items })).rows;
+  const rows = page([second, equity, first]);
+  assert.deepEqual(rows.map(r => [r.symbol, r.market_state, r.broker_id]), [[crypto, 'NONE', 7], [stock, 'AFTER_HOURS_END', null], [crypto, 'FUTURE_STATE', 0]]);
+  assert.equal(rows[1].total_seconds, '014400'); assert.equal(rows[1].trade_section, null);
+  assert.equal(rows[2].broker_ids, '0,7'); assert.equal(rows[2].time_date, 20261124);
+  assert.throws(() => page([equity]), /INCOMPLETE_PAGE/);
+  assert.throws(() => page([equity, first, first]), /INVALID_PAGE/);
+  assert.throws(() => page([equity, first, second], { ...inputs, is_need_crypto_multi_broker: false }), /INVALID_PAGE/);
+  assert.throws(() => page([equity, { ...first, broker_id: undefined }, second]), /INVALID_PAGE/);
+  assert.throws(() => page([second, { ...equity, code: 'HK.00700' }]), /SECURITY_MISMATCH/);
+  for (const args of [{ symbols: [] }, { symbols: [stock, stock] }, { symbol: stock, is_contain_ba: 'true' }, { symbol: stock, api: 'elsewhere' }])
+    assert.throws(() => build(tool, args), /INVALID_PARAMETER/);
+});
+
+test('trading days bind inclusive market-local dates and preserve the provider’s session type and seconds independently', () => {
+  const tool = 'quote_trading_days', inputs = { market: 'HK', start: '2025-12-22', end: '2025-12-24' };
+  assert.deepEqual(build(tool, inputs), { method: 'GET', path: '/api/v1.0/quote/trading-days?market=HK&start=2025-12-22&end=2025-12-24' });
+  const whole = { time: inputs.start, trade_date_type: 'WHOLE', trade_second: 14400 };
+  const half = { time: inputs.end, trade_date_type: 'MORNING', trade_second: 14400 };
+  const result = days => project(tool, inputs, wire({ trading_days: days })).rows;
+  assert.deepEqual(result([half, whole]).map(r => [r.market, r.market_date, r.trade_date_type, r.trade_second]),
+    [['HK', inputs.end, 'MORNING', 14400], ['HK', inputs.start, 'WHOLE', 14400]]);
+  assert.deepEqual(result([]), []);
+  for (const delta of [{ start: '2026-02-29' }, { end: '2025-12-21' }, { market: 'UNKNOWN' }, { market: undefined }, { start: 20251222 }])
+    assert.throws(() => build(tool, { ...inputs, ...delta }), /INVALID_PARAMETER/);
+  assert.throws(() => result([whole, whole]), /INVALID_PAGE/);
+  assert.throws(() => result([{ ...whole, time: '2025-12-25' }]), /DATE_RANGE_MISMATCH/);
+  assert.throws(() => result([{ ...whole, trade_second: -1 }]), /INVALID_PAGE/);
+  assert.throws(() => result([{ ...whole, trade_date_type: 'UNKNOWN' }]), /INVALID_PAGE/);
+  assert.throws(() => project(tool, inputs, JSON.stringify({ ret_code: 0, data: { trading_days: [] }, pagination: { has_more: true } })), /INCOMPLETE_PAGE/);
+});
