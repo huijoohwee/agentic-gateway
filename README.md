@@ -20,6 +20,10 @@ Import `agentic-gateway/connectors/moomoo` to project a one-symbol OpenD snapsho
 
 [Qualified features, losses and verification](qualification/provider-handoff.md)
 
+### Saved securities history
+
+For a saved securities history page, import `buildMoomooSecuritiesHistoryRequest` and `projectMoomooSecuritiesHistoryResponse` from `agentic-gateway/connectors/moomoo-securities-history`. Supply `account_orders_history` or `account_fills_history`, the original request selectors including the exact decimal account ID and trading market, and the response text to the projection. It returns exact amounts, microsecond timestamps and the next opaque page flag. Each call reads one page locally. The account comes from the request path. Provider pages omit a stream cursor and normally omit an account ID. Order windows select by creation time, so reconciliation also needs a baseline for orders already working when a connection drops. Fill windows select by update time.
+
 ### Offline provider discovery
 
 `discoverProviderProfiles(hostFacts)` from `agentic-gateway/provider-profiles` loads metadata only. The optional gateway module registers both manifests with the existing resolver. Each entry returns its input, output, features, losses and per-route requirements. The caller supplies only facts it can establish. For example, a Trading process can declare `snapshot-replay` and `opend-reader` without checking a port or reading credentials.

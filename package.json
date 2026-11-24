@@ -12,6 +12,7 @@
     "./catalog/bodies/*.txt": "./catalog/bodies/*.txt",
     "./connectors/moomoo-quote-socket": "./connectors/moomoo-quote-socket.mjs",
     "./connectors/moomoo-trade-event": "./connectors/moomoo-trade-event.mjs",
+    "./connectors/moomoo-securities-history": "./connectors/moomoo-securities-history.mjs",
     "./connectors/moomoo-watchlist": "./connectors/moomoo-watchlist.mjs",
     "./connectors/moomoo-market-rest": "./connectors/moomoo-market-rest.mjs",
     "./connectors/moomoo-stock-screen": "./connectors/moomoo-stock-screen.mjs",
@@ -36,7 +37,7 @@
     "qualification/hyperframes/open-studio/index.html"
   ],
   "scripts": {
-    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/trade-event.test.mjs test/quote-socket.test.mjs",
+    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs",
     "setup": "agentic-os setup",
     "doctor": "agentic-os doctor",
     "lane": "agentic-os start",
