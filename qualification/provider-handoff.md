@@ -30,3 +30,7 @@ Import `agentic-gateway/connectors/moomoo-catalog.json` on demand to inspect doc
 To reproduce the static export, supply the retained import directory and the public documentation directory response from `https://open.moomoo.com/api/biz/mcp/tools` to `node tools/project-moomoo-catalog.mjs MIRROR DIRECTORY.json 2026-11-24 --check`. No credentials are required for these documentation inputs.
 
 The connector exports `replayMoomooQuote` alongside the ORDER_BOOK, TICKER and KLINE projections. QUOTE preserves missing fields, provider-double prices, the suspension flag and millisecond timestamps. Extended sessions, market status messages and broker queues need separate projections.
+
+The package also exports `agentic-gateway/connectors/moomoo-fields.json`. It records the public HTTP path variables, documented parameters and request bodies, nested input fields, supplied constraints, top-level result field names and documented pagination fields for all 107 tools. An omitted required flag stays unspecified. Consumers can inspect the file offline. Host discovery supplies the actual MCP descriptor for a connected read.
+
+Run `node tools/project-moomoo-catalog.mjs --fields DIRECTORY.json --check` against the retained public directory response to reproduce the field register. The check verifies the complete response digest and each tool against the sealed catalog before comparison. It reads no credentials or market data.
