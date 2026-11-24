@@ -65,8 +65,11 @@ export function bindMoomooSnapshot(client, grant) {
 // call, which carries no depth, tape or kline, so these are separate replay projections.
 const directions = new Set(['BUY', 'SELL', 'NEUTRAL']);
 
+// Push messages carry textual market codes independently of OpenD's numeric market IDs.
+const pushSymbol = /^([A-Z][A-Z0-9]{0,11})\.[A-Z0-9][A-Z0-9.-]{0,31}$/;
+
 function messageData(symbol, response, type) {
-  securityFor(symbol);
+  if (typeof symbol !== 'string' || !pushSymbol.test(symbol)) throw Error('UNSUPPORTED_SECURITY');
   if (response?.type !== type || response.symbol !== symbol) throw Error('SECURITY_MISMATCH');
   const data = response.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('INVALID_SNAPSHOT');
@@ -161,4 +164,74 @@ export function replayMoomooQuote(symbol, response) {
     suspended: data.suspension ?? null, status: data.sec_status ?? null,
     pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
   };
+}
+
+// Published market_state enum in /api/quote/naming-dictionary. Index equals the wire code.
+const marketStates = [
+  'NONE', 'AUCTION', 'WAITING_OPEN', 'MORNING',
+  'REST', 'AFTERNOON', 'CLOSED', 'MAAUCTION',
+  'PRE_MARKET_BEGIN', 'PRE_MARKET_END', 'AFTER_HOURS_BEGIN', 'AFTER_HOURS_END',
+  'FUTU_SWITCH_DATE', 'NIGHT_OPEN', 'NIGHT_END', 'FUTURE_DAY_OPEN',
+  'FUTURE_DAY_BREAK', 'FUTURE_DAY_CLOSE', 'FUTURE_DAY_WAIT_OPEN', 'HK_CAS',
+  'FUTURE_NIGHT_WAIT', 'FUTURE_AFTERNOON', 'FUTURE_SWITCH_DATE', 'FUTURE_OPEN',
+  'FUTURE_BREAK', 'FUTURE_BREAK_OVER', 'FUTURE_CLOSE', 'STIB_AFTER_HOURS_WAIT',
+  'STIB_AFTER_HOURS_BEGIN', 'STIB_AFTER_HOURS_END', 'CLOSE_AUCTION', 'AFTERNOON_END',
+  'NIGHT', 'OVERNIGHT_BEGIN', 'OVERNIGHT_END', 'TRADE_AT_LAST',
+  'TRADE_AUCTION', 'OVERNIGHT',
+];
+
+function brokerRows(rows) {
+  if (rows == null) return null;
+  if (!Array.isArray(rows)) throw Error('INVALID_BROKER_QUEUE');
+  return rows.map(row => {
+    if (!Number.isSafeInteger(row?.rank) || row.rank < 0 ||
+        typeof row.broker_id !== 'string' || !row.broker_id ||
+        (row.broker_name != null && typeof row.broker_name !== 'string')) throw Error('INVALID_BROKER_QUEUE');
+    return { rank: row.rank, brokerId: row.broker_id, brokerName: row.broker_name || null };
+  });
+}
+
+export function replayMoomooBrokerQueue(symbol, frame) {
+  const data = messageData(symbol, frame, 'BROKER_QUEUE');
+  const time = data.data_time_ms;
+  if (time != null && !Number.isSafeInteger(time)) throw Error('INVALID_MARKET_TIME');
+  return {
+    provider: 'moomoo', evidence: 'replay', symbol,
+    marketTimeUtc: time === 0 ? null : utcFromMs(time),
+    bids: brokerRows(data.bid_brokers), asks: brokerRows(data.ask_brokers),
+  };
+}
+
+function tradeDate(value) {
+  if (value == null || value === 0) return null;
+  if (!Number.isInteger(value) || value < 10000101 || value > 99991231) throw Error('INVALID_TRADE_DATE');
+  const digits = String(value);
+  const iso = digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6);
+  const time = Date.parse(iso + 'T00:00:00Z');
+  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== iso) throw Error('INVALID_TRADE_DATE');
+  return iso;
+}
+
+export function replayMoomooMarketState(market, frame) {
+  const data = frame?.data;
+  if (typeof market !== 'string' || !/^[A-Z][A-Z0-9]{0,11}$/.test(market) ||
+      frame?.type !== 'MARKET_STATE' || data?.market !== market ||
+      (frame.symbol != null && (typeof frame.symbol !== 'string' || pushSymbol.exec(frame.symbol)?.[1] !== market))) {
+    throw Error('MARKET_MISMATCH');
+  }
+  const statusCode = data.status;
+  if (!Number.isSafeInteger(statusCode) || statusCode < 0) throw Error('INVALID_MARKET_STATUS');
+  return { provider: 'moomoo', evidence: 'replay', market, statusCode,
+    statusName: marketStates[statusCode] ?? null, tradeDate: tradeDate(data.trade_date) };
+}
+
+const pushProjections = new Map([
+  ['QUOTE', replayMoomooQuote], ['ORDER_BOOK', replayMoomooOrderBook], ['TICKER', replayMoomooTicker],
+  ['KLINE', replayMoomooKline], ['BROKER_QUEUE', replayMoomooBrokerQueue], ['MARKET_STATE', replayMoomooMarketState],
+]);
+
+// A consumer may skip an unknown frame. Malformed frames of a supported type fail explicitly.
+export function replayMoomooPush(target, frame) {
+  const project = pushProjections.get(frame?.type);
+  return project ? project(target, frame) : null;
 }
