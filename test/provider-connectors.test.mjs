@@ -139,3 +139,40 @@ test('the published catalog resolves offline and keeps documented HTTP schemas s
   assert.ok(catalog.sources.find(row => row.path === '/api/quote/calendar/earnings-calendar').routes
     .includes('GET /api/v1.0/quote/earnings-calendar'));
 });
+
+test('public HTTP field data reconciles every tool with the pinned catalog and preserves nested constraints', async () => {
+  const { default: spec } = await import('agentic-gateway/connectors/moomoo-fields.json', { with: { type: 'json' } });
+  const { default: catalog } = await import('agentic-gateway/connectors/moomoo-catalog.json', { with: { type: 'json' } });
+  assert.equal(spec.authority, false);
+  assert.equal(spec.directory_sha256, catalog.directory_sha256);
+  assert.deepEqual(spec.tools.map(row => row.name), catalog.tools.map(row => row.name));
+  const quote = spec.tools.find(row => row.name === 'quote_stock_quote');
+  assert.deepEqual(quote.body[0], { name: 'code_list', type: 'string_array', required: true, minItems: 1, maxItems: 400 });
+  assert(quote.response.length > 1);
+  const news = spec.tools.find(row => row.name === 'news_search');
+  assert.equal(news.params.find(field => field.name === 'keyword').maxLength, 200);
+  assert.equal(news.wrap, 'items');
+  assert(news.response.includes('publish_time'));
+  const order = spec.tools.find(row => row.name === 'trading_order_place');
+  assert.deepEqual(order.path, ['acc_id']);
+  assert(order.body.find(field => field.name === 'multi_leg_info').fields.some(field => field.name === 'option_strategy'));
+});
+
+test('field projection refuses directory or tool drift and malformed request fields', async () => {
+  const { projectFields } = await import('../tools/project-moomoo-catalog.mjs');
+  const { createHash } = await import('node:crypto');
+  const sha = value => createHash('sha256').update(value).digest('hex');
+  function fixture(params) {
+    const httpSchema = JSON.stringify({ apiId: 'quote_fixture', method: 'GET', path: '/api/v1.0/quote/x',
+      request: { params, body: [] }, response: { fields: { price: {} } } });
+    const raw = JSON.stringify({ ok: true, data: { tools: [{ httpSchema }] } });
+    return { raw, catalog: { schema: 'moomoo-documentation-catalog/v1', authority: false, directory_sha256: sha(raw),
+      tools: [{ name: 'quote_fixture', http: 'GET /api/v1.0/quote/x', http_schema_sha256: sha(httpSchema) }] } };
+  }
+  const { raw, catalog } = fixture([{ name: 'code', type: 'string' }]);
+  assert.deepEqual(projectFields(catalog, raw).tools[0].params, [{ name: 'code', type: 'string' }]);
+  assert.throws(() => projectFields(catalog, raw + ' '), /PUBLIC_DIRECTORY_DRIFT/);
+  assert.throws(() => projectFields({ ...catalog, tools: [] }, raw), /PUBLIC_TOOL_DRIFT/);
+  const invalid = fixture([{ name: 'x', type: 'object', sub_fields: [{ name: 'a', type: 'string', required: 1 }] }]);
+  assert.throws(() => projectFields(invalid.catalog, invalid.raw), /INVALID_PUBLIC_FIELDS/);
+});
