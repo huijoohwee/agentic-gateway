@@ -5,6 +5,8 @@ export const marketRestRoutes = Object.freeze({
   quote_order_book: 'POST ' + root + 'order-book',
   quote_rt_ticker: 'GET ' + root + '{symbol}/rt-ticker',
   quote_cur_kline: 'GET ' + root + '{symbol}/cur-kline',
+  quote_market_state: 'POST ' + root + 'market-state',
+  quote_trading_days: 'GET ' + root + 'trading-days',
   quote_history_kline: 'GET ' + root + '{symbol}/history-kline',
 });
 const sessions = ['NORMAL', 'BEFORE', 'AFTER', 'OVERNIGHT'];
@@ -62,18 +64,45 @@ function historyRequest(path, inputs) {
   return { method: 'GET', path: path.replace('{symbol}', encodeURIComponent(code)) + '?' + query };
 }
 
+const stateFlags = ['is_contain_ba', 'is_contain_overnight', 'is_need_crypto_multi_broker'];
+const calendarMarkets = new Set(['HK', 'US', 'SH', 'SZ', 'BJ', 'SG', 'JP', 'KR', 'CA', 'AU', 'JP_FUTURE', 'SG_FUTURE', 'BMD', 'FX']);
+
+function codeList(inputs, flags, limit) {
+  only(inputs, ['symbol', 'symbols', ...flags]);
+  check(Object.hasOwn(inputs, 'symbol') !== Object.hasOwn(inputs, 'symbols'));
+  const values = Object.hasOwn(inputs, 'symbol') ? [inputs.symbol] : inputs.symbols;
+  check(Array.isArray(values) && values.length > 0 && values.length <= 400);
+  const codes = Array.from(values, value => symbol(value, limit));
+  distinct(codes);
+  return codes;
+}
+
+export function buildMoomooSessionArguments(tool, inputs) {
+  if (tool === 'quote_market_state') {
+    const args = { code_list: codeList(inputs, stateFlags, 128) };
+    for (const flag of stateFlags) {
+      if (!Object.hasOwn(inputs, flag)) continue;
+      check(typeof inputs[flag] === 'boolean'); args[flag] = inputs[flag];
+    }
+    return args;
+  }
+  check(tool === 'quote_trading_days', 'UNSUPPORTED');
+  only(inputs, ['market', 'start', 'end']);
+  check(calendarMarkets.has(inputs.market));
+  for (const date of [inputs.start, inputs.end]) {
+    check(typeof date === 'string'); marketDate(date, 'INVALID_PARAMETER');
+  }
+  check(inputs.start <= inputs.end);
+  return { market: inputs.market, start: inputs.start, end: inputs.end };
+}
+
 export function buildMoomooMarketRequest(tool, inputs) {
   check(typeof tool === 'string' && Object.hasOwn(marketRestRoutes, tool), 'UNSUPPORTED');
   const [method, path] = marketRestRoutes[tool].split(' ');
   if (tool === 'quote_history_kline') return historyRequest(path, inputs);
-  if (tool === 'quote_stock_quote') {
-    only(inputs, ['symbol', 'symbols']);
-    check(Object.hasOwn(inputs, 'symbol') !== Object.hasOwn(inputs, 'symbols'));
-    const codes = Object.hasOwn(inputs, 'symbol') ? [inputs.symbol] : inputs.symbols;
-    check(Array.isArray(codes) && codes.length > 0 && codes.length <= 400);
-    const code_list = Array.from(codes, code => symbol(code)); distinct(code_list);
-    return { method, path, body: { code_list } };
-  }
+  if (tool === 'quote_market_state') return { method, path, body: buildMoomooSessionArguments(tool, inputs) };
+  if (tool === 'quote_trading_days') return { method, path: path + '?' + new URLSearchParams(buildMoomooSessionArguments(tool, inputs)) };
+  if (tool === 'quote_stock_quote') return { method, path, body: { code_list: codeList(inputs, [], 32) } };
   const book = tool === 'quote_order_book', tape = tool === 'quote_rt_ticker';
   only(inputs, ['symbol', 'count', ...(book ? [] : tape ? ['period'] : ['ktype', 'autype', 'extended_time', 'pred_side'])]);
   const code = symbol(inputs.symbol, tape ? 128 : 32);
@@ -245,6 +274,41 @@ function historyPage(response, inputs, requested) {
   } else check(!token && !cursor, 'INVALID_PAGE');
   return { rows, requested, pagination: { has_more: pagination.has_more, next_page_token: token || null, next_time: cursor || null } };
 }
+function marketStates(data, body) {
+  const requested = new Set(body.code_list), seen = new Map();
+  check(Array.isArray(data?.market_state_list), 'INVALID_PAGE');
+  const rows = data.market_state_list.map(item => {
+    const code = item?.code;
+    check(requested.has(code), 'SECURITY_MISMATCH');
+    const broker = item.broker_id == null ? null : integer(item.broker_id, 0, Number.MAX_SAFE_INTEGER, 'INVALID_PAGE');
+    const brokers = seen.get(code) ?? new Set();
+    if (brokers.size) check(code.startsWith('CC.') && body.is_need_crypto_multi_broker === true &&
+      broker !== null && !brokers.has(null) && !brokers.has(broker), 'INVALID_PAGE');
+    brokers.add(broker); seen.set(code, brokers);
+    const row = { symbol: code, market_state: string(item.market_state), broker_id: broker,
+      time_date: item.time_date == null ? null : integer(item.time_date, 0, Number.MAX_SAFE_INTEGER, 'INVALID_PAGE') };
+    check(row.market_state.length > 0, 'INVALID_PAGE');
+    for (const key of ['stock_name', 'sc_name', 'tc_name', 'traded_seconds', 'total_seconds', 'trade_section', 'broker_ids'])
+      row[key] = item[key] == null ? null : string(item[key]);
+    return row;
+  });
+  check(seen.size === requested.size, 'INCOMPLETE_PAGE');
+  return rows;
+}
+
+function tradingDays(data, inputs) {
+  const rows = array(data?.trading_days, 1 + (Date.parse(inputs.end) - Date.parse(inputs.start)) / 86400000).map(day => {
+    check(typeof day?.time === 'string', 'INVALID_PAGE');
+    const date = marketDate(day.time);
+    check(date >= inputs.start && date <= inputs.end, 'DATE_RANGE_MISMATCH');
+    check(['WHOLE', 'MORNING', 'AFTERNOON'].includes(day.trade_date_type), 'INVALID_PAGE');
+    return { market: inputs.market, market_date: date, trade_date_type: day.trade_date_type,
+      trade_second: integer(day.trade_second, 0, Number.MAX_SAFE_INTEGER, 'INVALID_PAGE') };
+  });
+  distinct(rows.map(day => day.market_date), 'INVALID_PAGE');
+  return rows;
+}
+
 export function projectMoomooMarketResponse(tool, inputs, wire) {
   const request = buildMoomooMarketRequest(tool, inputs), response = readWire(wire);
   check(Number.isSafeInteger(response?.ret_code), 'INVALID_PAGE');
@@ -258,6 +322,11 @@ export function projectMoomooMarketResponse(tool, inputs, wire) {
     check(false, Object.hasOwn(codes, response.ret_code) ? codes[response.ret_code] : 'PROVIDER_ERROR');
   }
   const data = response.data;
+  if (tool === 'quote_market_state' || tool === 'quote_trading_days') {
+    check(response.pagination == null || (typeof response.pagination === 'object' && !Array.isArray(response.pagination) &&
+      [undefined, false].includes(response.pagination.has_more) && !response.pagination.next_page_token), 'INCOMPLETE_PAGE');
+    return { rows: tool === 'quote_market_state' ? marketStates(data, request.body) : tradingDays(data, inputs) };
+  }
   if (tool === 'quote_stock_quote') return { rows: quotes(data, request) };
   if (tool === 'quote_order_book') return { rows: books(data, inputs) };
   if (tool === 'quote_rt_ticker') return { rows: ticks(data, inputs) };
