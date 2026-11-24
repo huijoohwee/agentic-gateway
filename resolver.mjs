@@ -1,3 +1,5 @@
+import { createRecordRelation } from './vendor/agentic-base/record-links.mjs';
+
 // Local conformance host. The injected routes keep the native grant, result and receipt.
 const id = /^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/;
 const revision = /^[a-f0-9]{40}$/;
@@ -35,6 +37,27 @@ export function validateManifest(m) {
 
 export function createResolver(entries) {
   const catalog = entries.map(({ manifest, bindings }) => ({ m: validateManifest(manifest), bindings }));
+  let routeIndex;
+  function entriesForRoute(route) {
+    if (typeof route !== 'string') throw new TypeError('Expected a route name');
+    if (!routeIndex) {
+      const names = new Set(), links = [];
+      const sources = catalog.map(({ m }, index) => {
+        const source = String(index);
+        for (const name of m.routes) {
+          // JSON string encoding preserves every route accepted by validateManifest.
+          const target = JSON.stringify(name);
+          names.add(target); links.push({ source, target });
+        }
+        return source;
+      });
+      routeIndex = { names, relation: createRecordRelation({ sources, targets: names, links }) };
+    }
+    const target = JSON.stringify(route);
+    return routeIndex.names.has(target)
+      ? routeIndex.relation.to(target).map(edge => catalog[Number(edge.source)])
+      : [];
+  }
   const configured = binding => typeof binding?.invoke === 'function';
   function resolve(request) {
     const matches = catalog.filter(({ m }) => m.id === request.id && m.major === request.major);
@@ -51,9 +74,10 @@ export function createResolver(entries) {
     return { ok: true, m, binding };
   }
   return {
-    discover(hostFacts) {
+    discover(hostFacts, { route } = {}) {
       const facts = hostFacts === undefined ? null : new Set(hostFacts);
-      return catalog.map(({ m, bindings }) => {
+      const entries = route === undefined ? catalog : entriesForRoute(route);
+      return entries.map(({ m, bindings }) => {
         const entry = { manifest: m, configuredRoutes: m.routes.filter(route => configured(bindings[route])) };
         if (facts && m.requirements) {
           entry.routes = m.routes.map(route => {

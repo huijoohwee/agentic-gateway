@@ -25,6 +25,7 @@
   },
   "files": [
     "resolver.mjs",
+    "vendor/agentic-base",
     "README.md",
     "presets.mjs",
     "catalog",
@@ -55,6 +56,7 @@
     "node": ">=22.22.0"
   },
   "devDependencies": {
+    "@agentic-base/views-react": "https://codeload.github.com/huijoohwee/agentic-base/tar.gz/7b2d45d8e5ae867b4dba4be1ebe043d268c5042b",
     "agentic-os": "https://codeload.github.com/huijoohwee/agentic-os/tar.gz/f5cca6b1cd0d7bd16a0dd57abba35996262c481f",
     "js-yaml": "4.3.2"
   }
