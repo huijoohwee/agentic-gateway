@@ -117,10 +117,13 @@ test('binds period and adjustment and filters derived messages outside the reser
 test('preserves adjacent 64-bit ticker IDs and drops redelivery only for matching ticks', async () => {
   const first = '7647056964060558023', next = '7647056964060558024';
   const { read, peer } = setup({ type: 'ticker', frameLimit: 2 }), promise = read(); subscribe(peer);
-  peer.incoming(tape(tick(first))); peer.incoming(tape(tick(first)));
-  peer.incoming(tape(tick(first), tick(next))); peer.ack();
+  const rawTick = tick(first, '3.25000000000000001');
+  peer.incoming(tape(rawTick)); peer.incoming(tape(rawTick));
+  peer.incoming(tape(rawTick, tick(next))); peer.ack();
   const result = await promise;
   assert.deepEqual(result.frames.flatMap(f => f.ticks.map(t => t.sequence)), [first, next]);
+  assert.equal(result.frames[0].ticks[0].price, '3.25000000000000001');
+  assert.equal(result.frames[0].ticks[0].tradeType, 'NORMAL');
   const conflict = setup({ type: 'ticker', frameLimit: 2 }), fail = conflict.read(); subscribe(conflict.peer);
   conflict.peer.incoming(tape(tick(first, '3.25000000000000001')));
   conflict.peer.incoming(tape(tick(first, '3.25000000000000002')));

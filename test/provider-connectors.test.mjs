@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { discoverProviderProfiles } from '../provider-profiles.mjs';
 import { validateManifest } from '../resolver.mjs';
 import assert from 'node:assert/strict';
-import { replayMoomooPush, replayMoomooQuote, bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
+import { parseMoomooQuoteFrame, replayMoomooPush, replayMoomooQuote, bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
 import { importHyperframesHtml } from '../connectors/hyperframes.mjs';
 
 const symbol = 'HK.00700';
@@ -218,4 +218,31 @@ test('market-state replay binds the market, preserves unknown codes and validate
   assert.throws(() => replayMoomooPush('US', frame), /MARKET_MISMATCH/);
   assert.throws(() => replayMoomooPush('HK', { ...frame, symbol: 'US.AAPL' }), /MARKET_MISMATCH/);
   assert.equal(replayMoomooPush('HK', { ...frame, symbol }).market, 'HK');
+});
+
+test('quote frame files retain price tokens, wide trade IDs and exact volume alongside the chart value', () => {
+  const wire = '{"type":"TICKER","symbol":"HK.00700","data":{"ticker_list":[{"time_ms":1710000000000,"sequence":9007199254740993,"type":"NORMAL","direction":"BUY","price":3.25000000000000001,"volume":9007199254740993,"turnover":4.5000}]}}';
+  const frame = parseMoomooQuoteFrame(wire), result = replayMoomooPush(symbol, frame);
+  assert.ok(Object.isFrozen(frame.data.ticker_list[0]));
+  assert.equal(result.pricePrecision, 'json-number-token');
+  assert.deepEqual(result.ticks[0], { marketTimeUtc: '2024-03-09T16:00:00.000Z', direction: 'BUY',
+    price: '3.25000000000000001', volume: 9007199254740992, volumeText: '9007199254740993',
+    turnover: '4.5000', sequence: '9007199254740993', tradeType: 'NORMAL', timeMsText: '1710000000000' });
+  assert.throws(() => replayMoomooPush(symbol, parseMoomooQuoteFrame(wire.replace('"sequence":9007199254740993', '"sequence":1.5'))), /INVALID_TRADE_SEQUENCE/);
+  assert.throws(() => replayMoomooPush(symbol, parseMoomooQuoteFrame(wire.replace('"price":3.25000000000000001', '"price":"3.25"'))), /INVALID_SNAPSHOT/);
+  assert.throws(() => parseMoomooQuoteFrame(' '.repeat(500000)), /QUOTE_WIRE_LIMIT/);
+  assert.equal(replayMoomooPush(symbol, JSON.parse(wire)).pricePrecision, 'provider-double');
+});
+
+test('raw quote, book and candle price projections retain scale and scientific notation', () => {
+  function project(type, data) {
+    return replayMoomooPush(symbol, parseMoomooQuoteFrame('{"symbol":"HK.00700","type":"' + type + '","data":' + data + '}'));
+  }
+  const quote = project('QUOTE', '{"last_price":3.14000000000000001,"low_price":0.00,"volume":1e3,"turnover":1.00e3}');
+  assert.equal(quote.last, '3.14000000000000001'); assert.equal(quote.low, '0.00');
+  assert.equal(quote.volumeText, '1e3'); assert.equal(quote.turnover, '1.00e3');
+  const level = project('ORDER_BOOK', '{"bid_list":[],"ask_list":[{"price":1.20,"volume":100,"order_count":2}]}').asks[0];
+  assert.deepEqual(level, { price: '1.20', volume: 100, orderCount: 2 });
+  const bar = project('KLINE', '{"period":"1D","adjust":"none","kl_list":[{"open_price":1.2300,"high_price":2.50,"low_price":1e0,"close_price":1.23,"volume":1,"turnover":2.0}]}').bars[0];
+  assert.deepEqual([bar.open, bar.high, bar.low, bar.close, bar.turnover], ['1.2300','2.50','1e0','1.23','2.0']);
 });
