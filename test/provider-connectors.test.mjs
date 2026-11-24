@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { discoverProviderProfiles } from '../provider-profiles.mjs';
 import { validateManifest } from '../resolver.mjs';
 import assert from 'node:assert/strict';
-import { bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
+import { replayMoomooQuote, bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
 import { importHyperframesHtml } from '../connectors/hyperframes.mjs';
 
 const symbol = 'HK.00700';
@@ -107,4 +107,35 @@ test('kline replay projects OHLC decimal text and declares period/adjust', () =>
   const badClose = { ...candles, data: { ...candles.data, kl_list: [{ ...candles.data.kl_list[0], close_price: 0 }] } };
   assert.throws(() => replayMoomooKline(symbol, badClose), /INVALID_SNAPSHOT/);
   assert.throws(() => replayMoomooKline('SH.600000', candles), /UNSUPPORTED_SECURITY/);
+});
+
+
+test('the documented QUOTE frame preserves event time, zero volume, and missing session fields', () => {
+  const frame = { type: 'QUOTE', symbol, data: { data_time_ms: 1710000000000, last_price: 180.12,
+    open_price: 178.5, prev_close_price: 179.66, volume: 0, suspension: false, sec_status: 'NORMAL' } };
+  const quote = replayMoomooQuote(symbol, frame);
+  assert.equal(quote.last, '180.12');
+  assert.equal(quote.marketTimeUtc, '2024-03-09T16:00:00.000Z');
+  assert.equal(quote.volume, 0);
+  assert.equal(quote.high, null);
+  assert.equal(quote.suspended, false);
+  assert.equal(quote.currency, null);
+  assert.throws(() => replayMoomooQuote('US.AAPL', frame), /SECURITY_MISMATCH/);
+  assert.throws(() => replayMoomooQuote(symbol, { ...frame, data: { last_price: -1 } }), /INVALID_SNAPSHOT/);
+});
+
+test('the published catalog resolves offline and keeps documented HTTP schemas separate from host descriptors', async () => {
+  const { default: catalog } = await import('agentic-gateway/connectors/moomoo-catalog.json', { with: { type: 'json' } });
+  assert.equal(catalog.authority, false);
+  assert.equal(catalog.sources.length, 305);
+  assert.equal(catalog.sources.filter(row => row.imported === false).length, 109);
+  assert.equal(new Set(catalog.tools.map(row => row.name)).size, 107);
+  assert.equal(catalog.tools.length, 107);
+  assert.match(catalog.directory_sha256, /^[a-f0-9]{64}$/);
+  assert.ok(catalog.tools.every(row => /^[a-f0-9]{64}$/.test(row.http_schema_sha256)));
+  assert.equal(catalog.tools.find(row => row.name === 'trading_order_place').http, 'POST /api/v1.0/accounts/{acc_id}/orders');
+  const quotePush = catalog.sources.find(row => row.path === '/api/quote/push/data-format');
+  assert.equal(quotePush.routes.filter(route => route.startsWith('PUSH ')).length, 6);
+  assert.ok(catalog.sources.find(row => row.path === '/api/quote/calendar/earnings-calendar').routes
+    .includes('GET /api/v1.0/quote/earnings-calendar'));
 });

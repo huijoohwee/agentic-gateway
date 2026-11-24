@@ -22,3 +22,11 @@ The [Open studio invitation](hyperframes/open-studio/index.html) is an original 
 Both consumers can discover both versioned profiles offline. Graph advertises its browser import route. Trading advertises its replay route and lists the missing requirements for live quotes until the host has qualified the SDK, session and symbol entitlement.
 
 Replay tests exercise both, one or neither quote side. A separate single read of HK.00700 on the existing $0 Hong Kong LV1 entitlement returned positive `bidPrice` and `askPrice` and a UTC timestamp. This establishes field availability for that snapshot only. Feed attribution, delay and depth remain unverified. The shared observation omits prices and account details.
+
+## moomoo documentation and quote push replay
+
+Import `agentic-gateway/connectors/moomoo-catalog.json` on demand to inspect documented routes and HTTP schema digests. The public tool directory was observed on 24 November 2026. The catalog records each known URL in the supplied import index, including missing pages, and identifies REST methods, push topics and public tool names. A host still discovers its own MCP descriptor and verifies its grant. [Public directory](https://open.moomoo.com/mcp-docs/available-tools)
+
+To reproduce the static export, supply the retained import directory and the public documentation directory response from `https://open.moomoo.com/api/biz/mcp/tools` to `node tools/project-moomoo-catalog.mjs MIRROR DIRECTORY.json 2026-11-24 --check`. No credentials are required for these documentation inputs.
+
+The connector exports `replayMoomooQuote` alongside the ORDER_BOOK, TICKER and KLINE projections. QUOTE preserves missing fields, provider-double prices, the suspension flag and millisecond timestamps. Extended sessions, market status messages and broker queues need separate projections.

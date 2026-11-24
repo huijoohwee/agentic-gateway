@@ -145,3 +145,20 @@ export function replayMoomooKline(symbol, response) {
     pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
   };
 }
+
+// QUOTE is a push frame. Its event time is milliseconds, independently of
+// OpenD's updateTimestamp in seconds. Venue extensions stay outside this profile.
+export function replayMoomooQuote(symbol, response) {
+  const data = messageData(symbol, response, 'QUOTE');
+  if (data.suspension != null && typeof data.suspension !== 'boolean' ||
+      data.sec_status != null && typeof data.sec_status !== 'string') throw Error('INVALID_SNAPSHOT');
+  const price = value => value == null ? null : amount(value);
+  return {
+    provider: 'moomoo', evidence: 'replay', symbol, marketTimeUtc: utcFromMs(data.data_time_ms),
+    last: decimal(data.last_price), open: price(data.open_price), high: price(data.high_price),
+    low: price(data.low_price), previousClose: price(data.prev_close_price),
+    volume: data.volume == null ? null : quantity(data.volume), turnover: price(data.turnover),
+    suspended: data.suspension ?? null, status: data.sec_status ?? null,
+    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+  };
+}
