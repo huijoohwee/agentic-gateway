@@ -3,7 +3,8 @@ import test from 'node:test';
 import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
 import catalog from 'agentic-gateway/connectors/moomoo-catalog.json' with { type: 'json' };
 import { buildMoomooWatchlistRequest as buildWatchlist, projectMoomooWatchlistResponse as readWatchlist,
-  watchlistRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
+  watchlistRestRoutes } from 'agentic-gateway/connectors/moomoo-watchlist';
+import * as marketFacade from 'agentic-gateway/connectors/moomoo-market-rest';
 
 const quote = 'quote_stock_quote', depth = 'quote_order_book', tape = 'quote_rt_ticker', candles = 'quote_cur_kline';
 const symbol = 'HK.00700';
@@ -19,6 +20,9 @@ const candle = { code: symbol, date: 20240229, time_key: 1780243200000, open_pri
   high_price: 13, volume: 0, turnover: 0, change_rate: '-1.230' };
 
 test('watchlist selectors use the private read catalog and preserve exact Unicode group identities', () => {
+  assert.equal(marketFacade.projectMoomooWatchlistResponse, readWatchlist);
+  assert.equal(marketFacade.buildMoomooWatchlistRequest, buildWatchlist);
+  assert.equal(marketFacade.watchlistRestRoutes, watchlistRestRoutes);
   for (const [tool, route] of Object.entries(watchlistRestRoutes)) {
     assert.equal(catalog.tools.find(t => t.name === tool).http, route);
     assert.throws(() => build(tool, {}), /UNSUPPORTED/);
