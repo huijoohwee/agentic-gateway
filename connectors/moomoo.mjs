@@ -84,14 +84,41 @@ function utcFromMs(value) {
   return new Date(Math.round(value)).toISOString();
 }
 
-function decimal(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) throw Error('INVALID_SNAPSHOT');
-  return String(value);
+const numberTokens = new WeakMap();
+const measuredKeys = new Set(['last_price', 'open_price', 'high_price', 'low_price', 'close_price',
+  'prev_close_price', 'volume', 'turnover', 'price', 'order_count', 'sequence', 'time_ms']);
+
+// Keep source spelling outside the JSON data and bind it to immutable parsed objects.
+export function parseMoomooQuoteFrame(text) {
+  if (typeof text !== 'string' || text.length >= 500000 || new TextEncoder().encode(text).length >= 500000)
+    throw Error('QUOTE_WIRE_LIMIT');
+  const frame = JSON.parse(text, function (key, value, context) {
+    if (typeof value === 'number' && measuredKeys.has(key)) {
+      if (typeof context?.source !== 'string' || context.source.length > 96) throw Error('QUOTE_NUMBER_SOURCE_REQUIRED');
+      if (!numberTokens.has(this)) numberTokens.set(this, new Map());
+      numberTokens.get(this).set(key, context.source);
+    }
+    return value && typeof value === 'object' ? Object.freeze(value) : value;
+  });
+  if (!frame || typeof frame !== 'object' || Array.isArray(frame)) throw Error('INVALID_QUOTE_FRAME');
+  if (!numberTokens.has(frame)) numberTokens.set(frame, new Map());
+  return frame;
 }
 
-function amount(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw Error('INVALID_SNAPSHOT');
-  return String(value);
+function decimal(row, key, allowZero = false) {
+  const value = row?.[key];
+  if (!Number.isFinite(value) || (allowZero ? value < 0 : value <= 0)) throw Error('INVALID_SNAPSHOT');
+  return numberTokens.get(row)?.get(key) ?? String(value);
+}
+
+function measuredQuantity(row, key, name) {
+  const value = quantity(row?.[key]);
+  const text = numberTokens.get(row)?.get(key);
+  return text === undefined || text === String(value) ? { [name]: value } : { [name]: value, [name + 'Text']: text };
+}
+
+function pricePrecision(frame) {
+  return numberTokens.has(frame) ? 'json-number-token' : 'provider-double';
 }
 
 function quantity(value) {
@@ -102,7 +129,7 @@ function quantity(value) {
 function levels(list) {
   if (!Array.isArray(list)) throw Error('INVALID_SNAPSHOT');
   return list.map(level => ({
-    price: decimal(level?.price), volume: quantity(level?.volume), orderCount: quantity(level?.order_count),
+    price: decimal(level, 'price'), ...measuredQuantity(level, 'volume', 'volume'), ...measuredQuantity(level, 'order_count', 'orderCount'),
   }));
 }
 
@@ -111,7 +138,7 @@ export function replayMoomooOrderBook(symbol, response) {
   return {
     provider: 'moomoo', evidence: 'replay', symbol,
     bids: levels(data.bid_list), asks: levels(data.ask_list),
-    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+    pricePrecision: pricePrecision(response), currency: null, delayClass: 'unknown',
     marketTimeUtc: utcFromMs(data.data_time_ms),
   };
 }
@@ -121,14 +148,24 @@ export function replayMoomooTicker(symbol, response) {
   if (!Array.isArray(data.ticker_list)) throw Error('INVALID_SNAPSHOT');
   const ticks = data.ticker_list.map(tick => {
     if (!directions.has(tick?.direction)) throw Error('INVALID_SNAPSHOT');
-    return {
-      marketTimeUtc: utcFromMs(tick.time_ms), direction: tick.direction,
-      price: decimal(tick.price), volume: quantity(tick.volume), turnover: amount(tick.turnover),
-    };
+    const result = { marketTimeUtc: utcFromMs(tick.time_ms), direction: tick.direction,
+      price: decimal(tick, 'price'), ...measuredQuantity(tick, 'volume', 'volume'), turnover: decimal(tick, 'turnover', true) };
+    if (numberTokens.has(response)) {
+      const tokens = numberTokens.get(tick);
+      if (tick.sequence != null) {
+        const sequence = typeof tick.sequence === 'string' ? tick.sequence : tokens?.get('sequence');
+        if (typeof sequence !== 'string' || !/^\d{1,20}$/.test(sequence)) throw Error('INVALID_TRADE_SEQUENCE');
+        result.sequence = sequence;
+      }
+      if (tick.type != null && typeof tick.type !== 'string') throw Error('INVALID_QUOTE_FRAME');
+      result.tradeType = tick.type ?? null;
+      if (tokens?.has('time_ms')) result.timeMsText = tokens.get('time_ms');
+    }
+    return result;
   });
   return {
     provider: 'moomoo', evidence: 'replay', symbol, ticks,
-    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+    pricePrecision: pricePrecision(response), currency: null, delayClass: 'unknown',
   };
 }
 
@@ -139,13 +176,13 @@ export function replayMoomooKline(symbol, response) {
   }
   const bars = data.kl_list.map(bar => ({
     marketTimeUtc: utcFromMs(bar.time_ms),
-    open: decimal(bar.open_price), high: decimal(bar.high_price),
-    low: decimal(bar.low_price), close: decimal(bar.close_price),
-    volume: quantity(bar.volume), turnover: amount(bar.turnover),
+    open: decimal(bar, 'open_price'), high: decimal(bar, 'high_price'),
+    low: decimal(bar, 'low_price'), close: decimal(bar, 'close_price'),
+    ...measuredQuantity(bar, 'volume', 'volume'), turnover: decimal(bar, 'turnover', true),
   }));
   return {
     provider: 'moomoo', evidence: 'replay', symbol, period: data.period, adjust: data.adjust, bars,
-    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+    pricePrecision: pricePrecision(response), currency: null, delayClass: 'unknown',
   };
 }
 
@@ -155,14 +192,14 @@ export function replayMoomooQuote(symbol, response) {
   const data = messageData(symbol, response, 'QUOTE');
   if (data.suspension != null && typeof data.suspension !== 'boolean' ||
       data.sec_status != null && typeof data.sec_status !== 'string') throw Error('INVALID_SNAPSHOT');
-  const price = value => value == null ? null : amount(value);
+  const optionalAmount = key => data[key] == null ? null : decimal(data, key, true);
   return {
     provider: 'moomoo', evidence: 'replay', symbol, marketTimeUtc: utcFromMs(data.data_time_ms),
-    last: decimal(data.last_price), open: price(data.open_price), high: price(data.high_price),
-    low: price(data.low_price), previousClose: price(data.prev_close_price),
-    volume: data.volume == null ? null : quantity(data.volume), turnover: price(data.turnover),
+    last: decimal(data, 'last_price'), open: optionalAmount('open_price'), high: optionalAmount('high_price'),
+    low: optionalAmount('low_price'), previousClose: optionalAmount('prev_close_price'),
+    ...(data.volume == null ? { volume: null } : measuredQuantity(data, 'volume', 'volume')), turnover: optionalAmount('turnover'),
     suspended: data.suspension ?? null, status: data.sec_status ?? null,
-    pricePrecision: 'provider-double', currency: null, delayClass: 'unknown',
+    pricePrecision: pricePrecision(response), currency: null, delayClass: 'unknown',
   };
 }
 

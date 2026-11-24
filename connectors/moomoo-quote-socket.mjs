@@ -1,4 +1,4 @@
-import { replayMoomooPush } from './moomoo.mjs';
+import { parseMoomooQuoteFrame, replayMoomooPush } from './moomoo.mjs';
 
 export const MOOMOO_QUOTE_SOCKET = 'wss://webapi-quote.moomoo.com/ws';
 const PERIODS = new Set(['1m', '3m', '5m', '10m', '15m', '30m', '60m', '120m',
@@ -7,7 +7,6 @@ const ADJUST = new Set(['none', 'forward', 'forward_exclude_dividend', 'forward_
 const TYPES = new Set(['quote', 'order_book', 'ticker', 'kline']);
 const MAX_WIRE_BYTES = 480_000;
 const MAX_MESSAGES = 128;
-const wireNumbers = Symbol('wire numbers');
 
 function check(ok, reason) { if (!ok) throw Error(reason); }
 function within(value, limit) { return Number.isSafeInteger(value) && value > 0 && value <= limit; }
@@ -24,22 +23,6 @@ function subscriptionFor(grant) {
   return { [type]: [symbol] };
 }
 
-function parseFrame(text) {
-  try {
-    return JSON.parse(text, function (key, value, context) {
-      if (typeof value === 'number' && Object.hasOwn(this, 'direction') &&
-          ['time_ms', 'price', 'volume', 'turnover'].includes(key)) {
-        check(typeof context?.source === 'string', 'QUOTE_NUMBER_SOURCE_REQUIRED');
-        (this[wireNumbers] ??= {})[key] = context.source;
-      }
-      if (key !== 'sequence' || typeof value !== 'number') return value;
-      const digits = context?.source ?? (Number.isSafeInteger(value) ? String(value) : '');
-      check(/^\d{1,20}$/.test(digits), 'INVALID_TRADE_SEQUENCE');
-      return digits;
-    });
-  } catch { throw Error('INVALID_QUOTE_FRAME'); }
-}
-
 function project(frame, subscription, seen) {
   const [type] = Object.keys(subscription);
   const item = subscription[type][0];
@@ -53,15 +36,11 @@ function project(frame, subscription, seen) {
   result.evidence = 'socket-frame';
   if (type !== 'ticker') return result;
   const ticks = [];
-  for (const [index, tick] of result.ticks.entries()) {
-    const source = frame.data.ticker_list[index];
-    check(typeof source.sequence === 'string' && /^\d{1,20}$/.test(source.sequence), 'INVALID_TRADE_SEQUENCE');
-    check(source.type == null || typeof source.type === 'string', 'INVALID_QUOTE_FRAME');
-    const record = { ...tick, sequence: source.sequence, tradeType: source.type ?? null };
-    const numbers = source[wireNumbers];
-    const digest = JSON.stringify([record, numbers?.time_ms, numbers?.price, numbers?.volume, numbers?.turnover]);
-    if (seen.has(record.sequence)) check(seen.get(record.sequence) === digest, 'CONFLICTING_TRADE');
-    else { seen.set(record.sequence, digest); ticks.push(record); }
+  for (const tick of result.ticks) {
+    check(typeof tick.sequence === 'string', 'INVALID_TRADE_SEQUENCE');
+    const digest = JSON.stringify(tick);
+    if (seen.has(tick.sequence)) check(seen.get(tick.sequence) === digest, 'CONFLICTING_TRADE');
+    else { seen.set(tick.sequence, digest); ticks.push(tick); }
   }
   return ticks.length || !result.ticks.length ? { ...result, ticks } : null;
 }
@@ -132,8 +111,8 @@ export function bindMoomooQuoteCapture({ grant, accessToken, openSocket = url =>
           check(typeof data === 'string' && data.length <= MAX_WIRE_BYTES, 'QUOTE_WIRE_LIMIT');
           bytes += new TextEncoder().encode(data).byteLength;
           check(++received <= MAX_MESSAGES && bytes <= MAX_WIRE_BYTES, 'QUOTE_WIRE_LIMIT');
-          const frame = parseFrame(data);
-          check(frame && typeof frame === 'object' && !Array.isArray(frame), 'INVALID_QUOTE_FRAME');
+          let frame;
+          try { frame = parseMoomooQuoteFrame(data); } catch { throw Error('INVALID_QUOTE_FRAME'); }
           if (Number.isInteger(frame.code) && frame.code !== 0) {
             // Provider text is private and can refer to credentials or account information.
             check(frame.code > 0 && frame.code <= 9999, 'INVALID_QUOTE_FRAME');
