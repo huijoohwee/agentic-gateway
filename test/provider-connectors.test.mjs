@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { discoverProviderProfiles } from '../provider-profiles.mjs';
 import { validateManifest } from '../resolver.mjs';
 import assert from 'node:assert/strict';
-import { replayMoomooQuote, bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
+import { replayMoomooPush, replayMoomooQuote, bindMoomooSnapshot, replayMoomooSnapshot, replayMoomooOrderBook, replayMoomooTicker, replayMoomooKline } from '../connectors/moomoo.mjs';
 import { importHyperframesHtml } from '../connectors/hyperframes.mjs';
 
 const symbol = 'HK.00700';
@@ -106,7 +106,7 @@ test('kline replay projects OHLC decimal text and declares period/adjust', () =>
   assert.throws(() => replayMoomooKline(symbol, { ...candles, data: { ...candles.data, period: undefined } }), /INVALID_SNAPSHOT/);
   const badClose = { ...candles, data: { ...candles.data, kl_list: [{ ...candles.data.kl_list[0], close_price: 0 }] } };
   assert.throws(() => replayMoomooKline(symbol, badClose), /INVALID_SNAPSHOT/);
-  assert.throws(() => replayMoomooKline('SH.600000', candles), /UNSUPPORTED_SECURITY/);
+  assert.throws(() => replayMoomooKline('SH.600000', candles), /SECURITY_MISMATCH/);
 });
 
 
@@ -184,4 +184,38 @@ test('field projection refuses directory or tool drift and malformed request fie
   assert.throws(() => projectFields({ ...catalog, tools: [] }, raw), /PUBLIC_TOOL_DRIFT/);
   const invalid = fixture([{ name: 'x', type: 'object', sub_fields: [{ name: 'a', type: 'string', required: 1 }] }]);
   assert.throws(() => projectFields(invalid.catalog, invalid.raw), /INVALID_PUBLIC_FIELDS/);
+});
+
+test('push dispatch preserves partial broker sides, tied ranks and textual IDs', () => {
+  const frame = { type: 'BROKER_QUEUE', symbol, data: { data_time_ms: 1710000000000,
+    bid_brokers: [{ rank: 1, broker_id: '0007' }, { rank: 1, broker_id: '8465', broker_name: 'Broker A' }] } };
+  const result = replayMoomooPush(symbol, frame);
+  assert.deepEqual(result.bids, [{ rank: 1, brokerId: '0007', brokerName: null },
+    { rank: 1, brokerId: '8465', brokerName: 'Broker A' }]);
+  assert.equal(result.asks, null);
+  assert.equal(result.marketTimeUtc, '2024-03-09T16:00:00.000Z');
+  assert.deepEqual(replayMoomooPush(symbol, { ...frame, data: { ask_brokers: [] } }).asks, []);
+  assert.throws(() => replayMoomooPush('HK.00800', frame), /SECURITY_MISMATCH/);
+  for (const bid_brokers of [{}, [null], [{ rank: 1, broker_id: 7 }], [{ rank: 1.5, broker_id: '07' }]]) {
+    assert.throws(() => replayMoomooPush(symbol, { ...frame, data: { bid_brokers } }), /INVALID_BROKER_QUEUE/);
+  }
+  assert.equal(replayMoomooPush('KR.005930', { type: 'QUOTE', symbol: 'KR.005930', data: { last_price: 5 } }).last, '5');
+  assert.equal(replayMoomooPush(symbol, { type: 'ACCOUNT' }), null);
+});
+
+test('market-state replay binds the market, preserves unknown codes and validates calendar dates', () => {
+  const frame = { type: 'MARKET_STATE', data: { market: 'HK', status: 6, trade_date: 20260720 } };
+  const project = data => replayMoomooPush('HK', { ...frame, data: { ...frame.data, ...data } });
+  assert.deepEqual(project({}), { provider: 'moomoo', evidence: 'replay', market: 'HK',
+    statusCode: 6, statusName: 'CLOSED', tradeDate: '2026-07-20' });
+  for (const [status, name] of [[0, 'NONE'], [31, 'AFTERNOON_END'], [37, 'OVERNIGHT'], [99, null]]) {
+    const projected = project({ status, trade_date: 0 });
+    assert.deepEqual([projected.statusCode, projected.statusName, projected.tradeDate], [status, name, null]);
+  }
+  assert.equal(project({ trade_date: 20240229 }).tradeDate, '2024-02-29');
+  for (const trade_date of [20230229, 20261301, '20260720']) assert.throws(() => project({ trade_date }), /INVALID_TRADE_DATE/);
+  assert.throws(() => project({ status: '6' }), /INVALID_MARKET_STATUS/);
+  assert.throws(() => replayMoomooPush('US', frame), /MARKET_MISMATCH/);
+  assert.throws(() => replayMoomooPush('HK', { ...frame, symbol: 'US.AAPL' }), /MARKET_MISMATCH/);
+  assert.equal(replayMoomooPush('HK', { ...frame, symbol }).market, 'HK');
 });
