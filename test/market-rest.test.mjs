@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
 import catalog from 'agentic-gateway/connectors/moomoo-catalog.json' with { type: 'json' };
+import { buildMoomooWatchlistRequest as buildWatchlist, projectMoomooWatchlistResponse as readWatchlist,
+  watchlistRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
 
 const quote = 'quote_stock_quote', depth = 'quote_order_book', tape = 'quote_rt_ticker', candles = 'quote_cur_kline';
 const symbol = 'HK.00700';
+const groups = 'quote_user_security_group', members = 'quote_user_security';
 const wire = data => JSON.stringify({ ret_code: 0, data });
 const quoteRow = { code: symbol, name: 'Example', data_date: '2026-11-23', data_time: 1795421270000, last_price: '344.00', suspension: false };
 const level = { price: '344.1000', volume: '9007199254740993', order_count: 0 };
@@ -14,6 +17,56 @@ const tapeRow = { sequence: '7647056964060558023', price: '465.800', volume: '35
   ticker_direction: 'NEUTRAL', period_type: 'AFTER', tick_type: 'AUTO_MATCH', pred_side: 'NO', price_ex: '0.22' };
 const candle = { code: symbol, date: 20240229, time_key: 1780243200000, open_price: 12, close_price: 10, low_price: 8,
   high_price: 13, volume: 0, turnover: 0, change_rate: '-1.230' };
+
+test('watchlist selectors use the private read catalog and preserve exact Unicode group identities', () => {
+  for (const [tool, route] of Object.entries(watchlistRestRoutes)) {
+    assert.equal(catalog.tools.find(t => t.name === tool).http, route);
+    assert.throws(() => build(tool, {}), /UNSUPPORTED/);
+  }
+  const name = '〇 & = /% #🪴';
+  assert.deepEqual(buildWatchlist(groups, {}), { method: 'GET', path: '/api/v1.0/quote/user-security-group?group_type=ALL' });
+  const request = buildWatchlist(members, { group_name: name });
+  assert.equal(request.method, 'GET');
+  const url = new URL(request.path, 'https://example.invalid');
+  assert.equal(url.pathname, '/api/v1.0/quote/user-security');
+  assert.deepEqual([...url.searchParams], [['group_name', name]]);
+  assert.doesNotThrow(() => buildWatchlist(members, { group_name: '🪴'.repeat(100) }));
+  for (const value of ['', '🪴'.repeat(101), '\uD800', null, 0])
+    assert.throws(() => buildWatchlist(members, { group_name: value }), /INVALID_PARAMETER/);
+  assert.throws(() => buildWatchlist(groups, { group_type: null }), /INVALID_PARAMETER/);
+  assert.throws(() => buildWatchlist(groups, { group_type: 'custom' }), /INVALID_PARAMETER/);
+  assert.throws(() => buildWatchlist(members, { group_name: name, codes: [symbol] }), /INVALID_PARAMETER/);
+  assert.throws(() => buildWatchlist('quote_modify_user_security', { group_name: name }), /UNSUPPORTED/);
+});
+
+test('watchlist groups preserve user names and refuse a different group type or a partial response', () => {
+  const custom = { group_name: ' Local ', group_type: 'CUSTOM' }, system = { group_name: 'All', group_type: 'SYSTEM' };
+  const response = wire({ group_list: [system, custom] });
+  assert.deepEqual(readWatchlist(groups, {}, response), { rows: [system, custom], requested: { group_type: 'ALL' } });
+  assert.deepEqual(readWatchlist(groups, { group_type: 'CUSTOM' }, wire({ group_list: [custom] })).rows, [custom]);
+  assert.throws(() => readWatchlist(groups, { group_type: 'CUSTOM' }, response), /GROUP_TYPE_MISMATCH/);
+  assert.throws(() => readWatchlist(groups, {}, '{"ret_code":-9}'), /PERMISSION_DENIED/);
+  assert.throws(() => readWatchlist(groups, {}, wire({})), /INVALID_PAGE/);
+  const page = JSON.stringify({ ret_code: 0, data: { group_list: [] }, pagination: { has_more: true } });
+  assert.throws(() => readWatchlist(groups, {}, page), /INCOMPLETE_PAGE/);
+});
+
+test('watchlist members retain derivative fields, large security IDs, exact prices and empty groups', () => {
+  const input = { group_name: 'Synthetic option group' };
+  const item = { code: 'US.TEST260619C12000', name: 'Test', sc_name: '例', tc_name: '例', lot_size: 100,
+    stock_type: 'DRVT', stock_child_type: 8002, stock_owner: 'US.TEST', option_type: 'CALL', strike_time: '2026-06-19',
+    strike_price: 'priceToken', listing_date: '', stock_id: 'idToken', main_contract: false, last_trade_time: '' };
+  const response = wire({ security_list: [item] }).replace('"priceToken"', '12.000000000000000001').replace('"idToken"', '9007199254740993');
+  const { rows: [row], requested } = readWatchlist(members, input, response);
+  assert.deepEqual(requested, input);
+  assert.deepEqual(row, { symbol: item.code, name: item.name, sc_name: item.sc_name, tc_name: item.tc_name, stock_type: 'DRVT',
+    stock_owner: 'US.TEST', option_type: 'CALL', lot_size: 100, stock_child_type: 8002, strike_time: '2026-06-19',
+    strike_price: '12.000000000000000001', listing_date: null, stock_id: '9007199254740993', main_contract: false, last_trade_time: null });
+  assert.deepEqual(readWatchlist(members, input, wire({ security_list: [] })), { rows: [], requested: input });
+  assert.throws(() => readWatchlist(members, input, wire({ security_list: [{ code: symbol, name: 'x', stock_id: -1 }] })), /INVALID_PAGE/);
+  assert.throws(() => readWatchlist(members, input, wire({ security_list: [{ code: symbol, name: 'x', listing_date: '2025-02-29' }] })), /INVALID_PAGE/);
+  assert.throws(() => readWatchlist(members, input, '{"ret_code":-3}'), /INVALID_PARAMETER/);
+});
 
 test('the native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
   for (const [name, route] of Object.entries(marketRestRoutes)) assert.equal(catalog.tools.find(t => t.name === name).http, route);
