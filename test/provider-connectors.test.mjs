@@ -129,6 +129,15 @@ test('the published catalog resolves offline and keeps documented HTTP schemas s
   assert.equal(catalog.authority, false);
   assert.equal(catalog.sources.length, 305);
   assert.equal(catalog.sources.filter(row => row.imported === false).length, 109);
+  const references = catalog.sources.filter(row => row.reference);
+  assert.equal(catalog.reference_observed, '2026-11-24');
+  assert.equal(references.length, 109);
+  assert.ok(references.every(row => row.imported === false && /^[a-f0-9]{64}$/.test(row.reference.sha256)));
+  assert.equal(references.filter(row => row.reference.routes.length).length, 87);
+  const reference = path => references.find(row => row.path === path).reference;
+  assert.deepEqual(reference('/dashboard').routes, []);
+  assert.deepEqual(reference('/api/quote/derivatives/option-event').routes, ['GET /api/v1.0/quote/option-event']);
+  assert.deepEqual(reference('/zh-cn/api/crypto_trading/account/get-accounts').routes, []);
   assert.equal(new Set(catalog.tools.map(row => row.name)).size, 107);
   assert.equal(catalog.tools.length, 107);
   assert.match(catalog.directory_sha256, /^[a-f0-9]{64}$/);
