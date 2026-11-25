@@ -219,3 +219,27 @@ test('market-state replay binds the market, preserves unknown codes and validate
   assert.throws(() => replayMoomooPush('HK', { ...frame, symbol: 'US.AAPL' }), /MARKET_MISMATCH/);
   assert.equal(replayMoomooPush('HK', { ...frame, symbol }).market, 'HK');
 });
+
+test('public coverage projects reversible offline route, field and dictionary records', async () => {
+  const { publicRoutes, coverageRelations, httpFieldInventory, routeId, namingDictionaries } =
+    await import('agentic-gateway/connectors/moomoo-coverage');
+  const { default: catalog } = await import('agentic-gateway/connectors/moomoo-catalog.json', { with: { type: 'json' } });
+  const { default: register } = await import('agentic-gateway/connectors/moomoo-fields.json', { with: { type: 'json' } });
+  const routes = publicRoutes(catalog);
+  assert.deepEqual(['REST', 'MCP', 'Push'].map(kind => routes.filter(row => row.transport === kind).length), [258, 107, 24]);
+  assert.equal(new Set(routes.map(routeId)).size, routes.length);
+  const links = coverageRelations(catalog, routes);
+  for (const tool of catalog.tools) {
+    const edges = links.tools.from(tool.name);
+    assert.deepEqual(edges.map(edge => links.routesById.get(edge.target).transport).sort(), ['MCP', 'REST']);
+    assert.ok(edges.every(edge => links.tools.to(edge.target).includes(edge)));
+  }
+  const fields = httpFieldInventory(register, catalog);
+  assert.equal(fields.length, 1568);
+  assert.equal(new Set(fields.map(field => field.key)).size, fields.length);
+  const dictionaries = namingDictionaries(catalog);
+  assert.deepEqual(dictionaries.map(item => item.area).sort(), ['crypto_trading', 'quote', 'trading']);
+  assert.ok(dictionaries.every(item => item.url === catalog.origin + item.path && /^[a-f0-9]{64}$/.test(item.digest)));
+  assert.throws(() => publicRoutes({ ...catalog, authority: true }), /COVERAGE_SOURCE_DRIFT/);
+  assert.throws(() => httpFieldInventory({ ...register, directory_sha256: '' }, catalog), /FIELD_REGISTER_DRIFT/);
+});

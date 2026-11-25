@@ -22,6 +22,7 @@
     "./examples/hyperframes/cards.html": "./qualification/hyperframes/index.html",
     "./provider-profiles": "./provider-profiles.mjs",
     "./examples/hyperframes/open-studio.html": "./qualification/hyperframes/open-studio/index.html",
+    "./connectors/moomoo-coverage": "./connectors/moomoo-coverage.mjs",
     "./connectors/moomoo-catalog.json": "./connectors/moomoo-catalog.json",
     "./connectors/moomoo-fields.json": "./connectors/moomoo-fields.json",
     "./transfer/browser-files": {
