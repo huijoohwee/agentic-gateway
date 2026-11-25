@@ -8,11 +8,21 @@ export { describeMoomooIpo } from './moomoo-ipo.mjs';
 export { describeMoomooRanking } from './moomoo-rank.mjs';
 export { watchlistRestRoutes, buildMoomooWatchlistRequest, projectMoomooWatchlistResponse } from './moomoo-watchlist.mjs';
 
+const companyRoutes = Object.freeze({
+  quote_company_executive_background: 'GET ' + root + '{symbol}/company/executive-background',
+  quote_company_executives: 'GET ' + root + '{symbol}/company/executives',
+  quote_company_operational_efficiency: 'GET ' + root + '{symbol}/company/operational-efficiency',
+});
+const companyNumberKeys = new Set(['begin_date', 'issue_date', 'shares', 'annual_salary', 'fiscal_year', 'financial_type', 'end_date',
+  'employee_num', 'employee_num_yoy', 'income_per_capita', 'income_per_capita_yoy', 'profit_per_capita',
+  'profit_per_capita_yoy', 'net_profit_per_capita', 'net_profit_per_capita_yoy']);
+
 export const marketRestRoutes = Object.freeze({
   ...capitalFlowRoutes,
   ...calendarRoutes,
   ...rankRoutes,
   ...ipoRoutes,
+  ...companyRoutes,
   quote_stock_quote: 'POST ' + root + 'stock-quote',
   quote_order_book: 'POST ' + root + 'order-book',
   quote_rt_ticker: 'GET ' + root + '{symbol}/rt-ticker',
@@ -60,6 +70,93 @@ function historyRequest(path, inputs) {
   return { method: 'GET', path: path.replace('{symbol}', encodeURIComponent(code)) + '?' + query };
 }
 
+function companyRequest(tool, inputs, path) {
+  const code = symbol(inputs.symbol), query = new URLSearchParams();
+  if (tool === 'quote_company_executive_background') {
+    only(inputs, ['symbol', 'leader_name']);
+    check(typeof inputs.leader_name === 'string' && inputs.leader_name.length > 0 && inputs.leader_name.length <= 100);
+    query.set('leader_name', inputs.leader_name);
+  } else if (tool === 'quote_company_executives') only(inputs, ['symbol']);
+  else {
+    only(inputs, ['symbol', 'limit', 'next_key', 'currency_code', 'financial_type']);
+    if (Object.hasOwn(inputs, 'limit')) query.set('limit', integer(inputs.limit, 1, 100));
+    if (Object.hasOwn(inputs, 'next_key')) {
+      check(typeof inputs.next_key === 'string' && inputs.next_key.length <= 1000);
+      if (inputs.next_key) query.set('next_key', inputs.next_key);
+    }
+    if (Object.hasOwn(inputs, 'currency_code')) {
+      check(typeof inputs.currency_code === 'string' && inputs.currency_code.length <= 10 && /^[A-Z]*$/.test(inputs.currency_code));
+      if (inputs.currency_code) query.set('currency_code', inputs.currency_code);
+    }
+    if (Object.hasOwn(inputs, 'financial_type')) {
+      check([7, 102].includes(inputs.financial_type)); query.set('financial_type', inputs.financial_type);
+    }
+  }
+  const requestPath = path.replace('{symbol}', encodeURIComponent(code));
+  return { method: 'GET', path: query.size ? requestPath + '?' + query : requestPath };
+}
+
+function companyInteger(value) {
+  const text = value instanceof WireNumber ? value.source : value;
+  check((typeof text === 'number' && Number.isSafeInteger(text)) ||
+    (typeof text === 'string' && /^\d+$/.test(text) && Number.isSafeInteger(Number(text))), 'INVALID_PAGE');
+  return Number(text);
+}
+
+function companyTextAmount(value) {
+  if (value instanceof WireNumber) return decimal(value);
+  return string(value);
+}
+
+function executiveRow(source, code) {
+  check(source && typeof source === 'object' && !Array.isArray(source), 'INVALID_PAGE');
+  const row = { symbol: code, leader_name: string(source.leader_name) };
+  const textFields = ['display_leader_name', 'position_name', 'leader_gender', 'leader_age', 'highest_education',
+    'begin_date_str', 'issue_date_str', 'annual_salary_currency'];
+  for (const key of textFields) if (Object.hasOwn(source, key))
+    row[key] = source[key] === null ? null : string(source[key]);
+  for (const key of ['begin_date', 'issue_date']) if (Object.hasOwn(source, key))
+    row[key] = source[key] === null ? null : companyInteger(source[key]);
+  for (const key of ['shares', 'annual_salary']) if (Object.hasOwn(source, key))
+    row[key] = source[key] === null ? null : companyTextAmount(source[key]);
+  return row;
+}
+
+function operationalEfficiencyRow(source, code, currency) {
+  check(source && typeof source === 'object' && !Array.isArray(source), 'INVALID_PAGE');
+  const row = { symbol: code, currency_code: currency,
+    fiscal_year: companyInteger(source.fiscal_year), financial_type: companyInteger(source.financial_type),
+    period_text: string(source.period_text), end_date: companyInteger(source.end_date),
+    end_date_str: marketDate(source.end_date_str), employee_num: companyInteger(source.employee_num) };
+  const amounts = ['employee_num_yoy', 'income_per_capita', 'income_per_capita_yoy', 'profit_per_capita',
+    'profit_per_capita_yoy', 'net_profit_per_capita', 'net_profit_per_capita_yoy'];
+  for (const key of amounts) row[key] = source[key] == null ? null : decimal(source[key]);
+  return row;
+}
+
+function companyPage(tool, inputs, response) {
+  const data = response.data, code = symbol(inputs.symbol);
+  check(data && typeof data === 'object' && !Array.isArray(data), 'INVALID_PAGE');
+  if (tool === 'quote_company_executive_background') {
+    check(typeof data.brief_background === 'string', 'INVALID_PAGE');
+    return { rows: [{ symbol: code, leader_name: inputs.leader_name, brief_background: data.brief_background }] };
+  }
+  if (tool === 'quote_company_executives') {
+    check(Array.isArray(data.executives), 'INVALID_PAGE');
+    return { rows: data.executives.map(item => executiveRow(item, code)) };
+  }
+  check(typeof data.currency_code === 'string' && /^[A-Z]{3}$/.test(data.currency_code) &&
+    Array.isArray(data.item_list) && data.item_list.length <= (inputs.limit ?? 10), 'INVALID_PAGE');
+  const financialType = inputs.financial_type ?? 7;
+  const rows = data.item_list.map(item => operationalEfficiencyRow(item, code, data.currency_code));
+  check(rows.every(row => financialType === 7 ? row.financial_type === 7 : [1, 5, 6, 7, 70, 71].includes(row.financial_type)), 'INVALID_PAGE');
+  const page = response.pagination;
+  check(page && typeof page.has_more === 'boolean', 'INVALID_PAGE');
+  const cursor = page.next_key == null ? '' : string(page.next_key);
+  check(cursor.length <= 1000 && !/[\u0000-\u001f\u007f]/u.test(cursor) && (!page.has_more || cursor.length > 0), 'INVALID_PAGE');
+  return { rows, pagination: { has_more: page.has_more, next_page_token: page.has_more ? cursor : null } };
+}
+
 const stateFlags = ['is_contain_ba', 'is_contain_overnight', 'is_need_crypto_multi_broker'];
 const calendarMarkets = new Set(['HK', 'US', 'SH', 'SZ', 'BJ', 'SG', 'JP', 'KR', 'CA', 'AU', 'JP_FUTURE', 'SG_FUTURE', 'BMD', 'FX']);
 
@@ -95,6 +192,7 @@ export function buildMoomooSessionArguments(tool, inputs) {
 export function buildMoomooMarketRequest(tool, inputs) {
   check(typeof tool === 'string' && Object.hasOwn(marketRestRoutes, tool), 'UNSUPPORTED');
   const [method, path] = marketRestRoutes[tool].split(' ');
+  if (Object.hasOwn(companyRoutes, tool)) return companyRequest(tool, inputs, path);
   if (Object.hasOwn(ipoRoutes, tool)) return ipoRequest(tool, inputs, path);
   if (Object.hasOwn(rankRoutes, tool)) return rankRequest(tool, inputs, path);
   if (Object.hasOwn(calendarRoutes, tool)) return calendarRequest(tool, inputs, path);
@@ -286,15 +384,16 @@ function tradingDays(data, inputs) {
 
 export function projectMoomooMarketResponse(tool, inputs, wire) {
   const request = buildMoomooMarketRequest(tool, inputs);
+  const company = Object.hasOwn(companyRoutes, tool);
   const capital = Object.hasOwn(capitalFlowRoutes, tool);
   const calendar = Object.hasOwn(calendarRoutes, tool);
   const rank = Object.hasOwn(rankRoutes, tool);
   const ipo = Object.hasOwn(ipoRoutes, tool);
-  const response = readWire(wire, ipo ? ipoNumberKeys(tool) : capital ? flowNumbers : rank ? rankNumberKeys(tool) : undefined);
+  const response = readWire(wire, company ? companyNumberKeys : ipo ? ipoNumberKeys(tool) : capital ? flowNumbers : rank ? rankNumberKeys(tool) : undefined);
   check(Number.isSafeInteger(response?.ret_code), 'INVALID_PAGE');
   if (response.ret_code !== 0) {
-    if ((capital || calendar || rank || ipo) && response.ret_code === -10) check(false, 'NO_DATA');
-    if ((capital || calendar || rank || ipo) && response.ret_code === -8) check(false, 'UNSUPPORTED');
+    if ((capital || calendar || rank || ipo || company) && response.ret_code === -10) check(false, 'NO_DATA');
+    if ((capital || calendar || rank || ipo || company) && response.ret_code === -8) check(false, 'UNSUPPORTED');
     if (tool === 'quote_history_kline') {
       if (response.ret_code === -3 && response.error?.code === 'invalid_page_token') check(false, 'INVALID_PAGE_TOKEN');
       const errors = { [-8]: 'UNSUPPORTED', [-11]: 'RATE_LIMITED', [-12]: 'HISTORY_QUOTA_EXCEEDED', [-13]: 'QUOTA_UNAVAILABLE' };
@@ -309,6 +408,7 @@ export function projectMoomooMarketResponse(tool, inputs, wire) {
   if (rank) return rankPage(tool, inputs, response);
   if (calendar) return calendarPage(tool, inputs, response);
   if (capital) return flowPage(tool, inputs, response);
+  if (company) return companyPage(tool, inputs, response);
   const data = response.data;
   if (tool === 'quote_market_state' || tool === 'quote_trading_days') {
     completePage(response.pagination);
