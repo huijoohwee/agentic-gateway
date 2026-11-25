@@ -115,9 +115,10 @@ export function projectMoomooSecuritiesHistoryResponse(tool, inputs, wire) {
 const workingStatuses = new Set(['WAITING_SUBMIT', 'SUBMITTING', 'SUBMITTED', 'FILLED_PART']);
 const terminalStatuses = new Set(['FILLED_ALL', 'CANCELLED_PART', 'CANCELLED_ALL', 'FAILED', 'DISABLED', 'DELETED']);
 
-function openOrdersPage(inputs, wire, seenOrders) {
+export function projectMoomooOpenOrdersResponse(inputs, wire) {
   buildMoomooOpenOrdersRequest(inputs);
   const { list, completed, next } = readPage(inputs, wire, 'orders');
+  const seenOrders = new Set();
   const rows = list.map(raw => {
     const order = projectMoomooSecuritiesOrder(raw);
     check(!seenOrders.has(order.order_id), 'DUPLICATE_ORDER');
@@ -125,10 +126,6 @@ function openOrdersPage(inputs, wire, seenOrders) {
     return order;
   });
   return { rows, account_binding: 'request-path', market: inputs.trd_market, completed, next_page_flag: next };
-}
-
-export function projectMoomooOpenOrdersResponse(inputs, wire) {
-  return openOrdersPage(inputs, wire, new Set());
 }
 
 function savedOpenOrdersQuery(request, path, scope) {
@@ -148,33 +145,45 @@ function savedOpenOrdersQuery(request, path, scope) {
   return inputs;
 }
 
-/** Read a complete chain of saved {request: {method, path}, wire} exchanges.
- * Page completion covers the REST listing only. No stream checkpoint is inferred.
- */
-export function replayMoomooOpenOrdersBaseline(scope, exchanges) {
+/** Accept one saved GET at a time. Only a completed listing exposes account rows. */
+export function createMoomooOpenOrdersBaseline(scope) {
   only(scope, ['acc_id', 'trd_market']);
   accountQuery(scope);
-  check(Array.isArray(exchanges) && exchanges.length > 0, 'INCOMPLETE_BASELINE');
+  scope = { ...scope };
   const path = openOrdersPath.replace('{acc_id}', scope.acc_id);
   const seenFlags = new Set(), seenOrders = new Set(), working = [], terminal = [];
   let expectedFlag = '';
-  for (const exchange of exchanges) {
+  function append(exchange) {
     check(expectedFlag !== null, 'EXTRA_PAGE');
     const inputs = savedOpenOrdersQuery(exchange?.request, path, scope);
     const flag = inputs.page_flag ?? '';
-    check(flag === expectedFlag && !seenFlags.has(flag), 'INVALID_CONTINUATION');
-    seenFlags.add(flag);
-    const page = openOrdersPage(inputs, exchange.wire, seenOrders);
+    check(flag === expectedFlag, 'INVALID_CONTINUATION');
+    const page = projectMoomooOpenOrdersResponse(inputs, exchange.wire);
+    check(!seenFlags.has(page.next_page_flag), 'INVALID_CONTINUATION');
+    // Validate the whole page before committing any IDs, rows or pagination state.
     for (const order of page.rows) {
-      if (workingStatuses.has(order.status)) working.push(order);
-      else {
-        check(terminalStatuses.has(order.status), 'UNKNOWN_ORDER_STATUS');
-        terminal.push(order);
-      }
+      check(!seenOrders.has(order.order_id), 'DUPLICATE_ORDER');
+      check(workingStatuses.has(order.status) || terminalStatuses.has(order.status), 'UNKNOWN_ORDER_STATUS');
     }
+    for (const order of page.rows) {
+      seenOrders.add(order.order_id);
+      (workingStatuses.has(order.status) ? working : terminal).push(order);
+    }
+    seenFlags.add(flag);
     expectedFlag = page.next_page_flag;
+    return { page_count: seenFlags.size, completed: page.completed, next_page_flag: expectedFlag };
   }
-  check(expectedFlag === null, 'INCOMPLETE_BASELINE');
-  return { account_binding: 'request-path', market: scope.trd_market, page_count: exchanges.length,
-    working_orders: working, terminal_orders: terminal };
+  function result() {
+    check(expectedFlag === null, 'INCOMPLETE_BASELINE');
+    return { account_binding: 'request-path', market: scope.trd_market, page_count: seenFlags.size,
+      working_orders: [...working], terminal_orders: [...terminal] };
+  }
+  return Object.freeze({ append, result });
+}
+
+export function replayMoomooOpenOrdersBaseline(scope, exchanges) {
+  check(Array.isArray(exchanges), 'INCOMPLETE_BASELINE');
+  const baseline = createMoomooOpenOrdersBaseline(scope);
+  for (const exchange of exchanges) baseline.append(exchange);
+  return baseline.result();
 }

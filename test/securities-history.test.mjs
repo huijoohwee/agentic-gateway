@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMoomooSecuritiesHistoryRequest as build, projectMoomooSecuritiesHistoryResponse as project,
   buildMoomooOpenOrdersRequest as openRequest, projectMoomooOpenOrdersResponse as openPage,
-  replayMoomooOpenOrdersBaseline as baseline,
+  createMoomooOpenOrdersBaseline as startBaseline, replayMoomooOpenOrdersBaseline as baseline,
   securitiesHistoryRoutes } from 'agentic-gateway/connectors/moomoo-securities-history';
 import catalog from '../connectors/moomoo-catalog.json' with { type: 'json' };
 
@@ -141,4 +141,17 @@ test('refuses an ambiguous baseline while keeping unknown provider statuses insp
     assert.throws(replace({ method: 'GET', path: page.request.path + suffix }), /REQUEST_MISMATCH/);
   }
   assert.throws(() => baseline(scope, [exchange({ ...scope, page_size: 0 }, [])]), /INVALID_PAGE_SIZE/);
+});
+
+test('incremental replay can retry a refused page without exposing a partial list or changing its cursor', () => {
+  const selected = { ...scope }, listing = startBaseline(selected);
+  selected.acc_id = '5';
+  const first = exchange(scope, [order], { completed: false, page_flag: 'next' });
+  assert.deepEqual(listing.append(first), { page_count: 1, completed: false, next_page_flag: 'next' });
+  const request = { ...scope, page_flag: 'next' }, working = { ...order, order_id: 'working', order_status: 'FILLED_PART' };
+  assert.throws(() => listing.append(exchange(request, [working, order])), /DUPLICATE_ORDER/);
+  assert.throws(() => listing.result(), /INCOMPLETE_BASELINE/);
+  assert.deepEqual(listing.append(exchange(request, [working])), { page_count: 2, completed: true, next_page_flag: null });
+  assert.deepEqual(listing.result().working_orders.map(row => row.order_id), ['working']);
+  assert.throws(() => listing.append(first), /EXTRA_PAGE/);
 });
