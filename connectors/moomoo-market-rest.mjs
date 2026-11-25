@@ -1,10 +1,12 @@
 // Public market REST wire profiles. Hosts own credentials, admission, transport and retention.
 import { WireNumber, check, only, root, string, integer, readWire, decimal, measure, marketDate, completePage } from './moomoo-rest-wire.mjs';
 import { capitalFlowRoutes, flowNumbers, flowRequest, flowPage } from './moomoo-capital-flow.mjs';
+import { calendarRoutes, calendarPage, calendarRequest } from './moomoo-calendar.mjs';
 export { watchlistRestRoutes, buildMoomooWatchlistRequest, projectMoomooWatchlistResponse } from './moomoo-watchlist.mjs';
 
 export const marketRestRoutes = Object.freeze({
   ...capitalFlowRoutes,
+  ...calendarRoutes,
   quote_stock_quote: 'POST ' + root + 'stock-quote',
   quote_order_book: 'POST ' + root + 'order-book',
   quote_rt_ticker: 'GET ' + root + '{symbol}/rt-ticker',
@@ -87,6 +89,7 @@ export function buildMoomooSessionArguments(tool, inputs) {
 export function buildMoomooMarketRequest(tool, inputs) {
   check(typeof tool === 'string' && Object.hasOwn(marketRestRoutes, tool), 'UNSUPPORTED');
   const [method, path] = marketRestRoutes[tool].split(' ');
+  if (Object.hasOwn(calendarRoutes, tool)) return calendarRequest(tool, inputs, path);
   if (Object.hasOwn(capitalFlowRoutes, tool)) return flowRequest(tool, inputs, path, symbol);
   if (tool === 'quote_history_kline') return historyRequest(path, inputs);
   if (tool === 'quote_market_state') return { method, path, body: buildMoomooSessionArguments(tool, inputs) };
@@ -276,19 +279,23 @@ function tradingDays(data, inputs) {
 export function projectMoomooMarketResponse(tool, inputs, wire) {
   const request = buildMoomooMarketRequest(tool, inputs);
   const capital = Object.hasOwn(capitalFlowRoutes, tool);
+  const calendar = Object.hasOwn(calendarRoutes, tool);
   const response = readWire(wire, capital ? flowNumbers : undefined);
   check(Number.isSafeInteger(response?.ret_code), 'INVALID_PAGE');
   if (response.ret_code !== 0) {
-    if (capital && response.ret_code === -10) check(false, 'NO_DATA');
-    if (capital && response.ret_code === -8) check(false, 'UNSUPPORTED');
+    if ((capital || calendar) && response.ret_code === -10) check(false, 'NO_DATA');
+    if ((capital || calendar) && response.ret_code === -8) check(false, 'UNSUPPORTED');
     if (tool === 'quote_history_kline') {
       if (response.ret_code === -3 && response.error?.code === 'invalid_page_token') check(false, 'INVALID_PAGE_TOKEN');
       const errors = { [-8]: 'UNSUPPORTED', [-11]: 'RATE_LIMITED', [-12]: 'HISTORY_QUOTA_EXCEEDED', [-13]: 'QUOTA_UNAVAILABLE' };
       if (Object.hasOwn(errors, response.ret_code)) check(false, errors[response.ret_code]);
     }
+    if (calendar && response.ret_code === -9) check(false, 'PERMISSION_DENIED');
+    if (calendar && response.ret_code === -11) check(false, 'RATE_LIMITED');
     const codes = { [-3]: 'INVALID_PARAMETER', [-7]: 'INVALID_SYMBOL', ...(tool === 'quote_cur_kline' && { [-4]: 'INVALID_SYMBOL' }) };
     check(false, Object.hasOwn(codes, response.ret_code) ? codes[response.ret_code] : 'PROVIDER_ERROR');
   }
+  if (calendar) return calendarPage(tool, inputs, response);
   if (capital) return flowPage(tool, inputs, response);
   const data = response.data;
   if (tool === 'quote_market_state' || tool === 'quote_trading_days') {
