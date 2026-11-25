@@ -109,6 +109,7 @@ export function projectMoomooSecuritiesHistoryResponse(tool, inputs, wire) {
   });
   return { rows, account_binding: 'request-path', market: inputs.trd_market, symbol: inputs.code ?? null,
     time_basis: orders ? 'created_us' : 'updated_us', start_us: start.toString(), end_us: end.toString(),
+    window_start_us: upper === null ? null : lower.toString(), window_end_us: upper?.toString() ?? null,
     completed, next_page_flag: next };
 }
 
@@ -128,7 +129,7 @@ export function projectMoomooOpenOrdersResponse(inputs, wire) {
   return { rows, account_binding: 'request-path', market: inputs.trd_market, completed, next_page_flag: next };
 }
 
-function savedOpenOrdersQuery(request, path, scope) {
+function savedSecuritiesQuery(request, path, scope) {
   check(request?.method === 'GET' && typeof request.path === 'string' && !request.path.includes('#'), 'REQUEST_MISMATCH');
   const offset = request.path.indexOf('?');
   check(offset > 0 && request.path.slice(0, offset) === path, 'REQUEST_MISMATCH');
@@ -139,43 +140,62 @@ function savedOpenOrdersQuery(request, path, scope) {
   if (query.has('page_size')) {
     check(/^\d+$/.test(inputs.page_size), 'INVALID_PAGE_SIZE');
     inputs.page_size = Number(inputs.page_size);
-    // A zero-size request cannot establish the presence or absence of working orders.
     integer(inputs.page_size, 1, 100, 'INVALID_PAGE_SIZE');
   }
   return inputs;
 }
 
-/** Accept one saved GET at a time. Only a completed listing exposes account rows. */
-export function createMoomooOpenOrdersBaseline(scope) {
+function savedSecuritiesPages(tool, scope) {
   only(scope, ['acc_id', 'trd_market']);
   accountQuery(scope);
   scope = { ...scope };
-  const path = openOrdersPath.replace('{acc_id}', scope.acc_id);
-  const seenFlags = new Set(), seenOrders = new Set(), working = [], terminal = [];
-  let expectedFlag = '';
-  function append(exchange) {
+  const openOrders = tool === 'account_orders';
+  const path = (openOrders ? openOrdersPath : securitiesHistoryRoutes[tool].slice(4)).replace('{acc_id}', scope.acc_id);
+  const seenFlags = new Set(), seenRows = new Set();
+  const idKey = tool === 'account_fills_history' ? 'fill_id' : 'order_id';
+  let expectedFlag, selectors, startedAtContinuation;
+  return exchange => {
     check(expectedFlag !== null, 'EXTRA_PAGE');
-    const inputs = savedOpenOrdersQuery(exchange?.request, path, scope);
+    const inputs = savedSecuritiesQuery(exchange?.request, path, scope);
     const flag = inputs.page_flag ?? '';
-    check(flag === expectedFlag, 'INVALID_CONTINUATION');
-    const page = projectMoomooOpenOrdersResponse(inputs, exchange.wire);
+    if (expectedFlag !== undefined || openOrders) check(flag === (expectedFlag ?? ''), 'INVALID_CONTINUATION');
+    const page = openOrders ? projectMoomooOpenOrdersResponse(inputs, exchange.wire)
+      : projectMoomooSecuritiesHistoryResponse(tool, inputs, exchange.wire);
+    const selection = JSON.stringify([page.symbol, page.start_us, page.end_us]);
+    check(selectors === undefined || selectors === selection, 'HISTORY_SELECTION_CHANGED');
     check(!seenFlags.has(page.next_page_flag), 'INVALID_CONTINUATION');
-    // Validate the whole page before committing any IDs, rows or pagination state.
-    for (const order of page.rows) {
-      check(!seenOrders.has(order.order_id), 'DUPLICATE_ORDER');
-      check(workingStatuses.has(order.status) || terminalStatuses.has(order.status), 'UNKNOWN_ORDER_STATUS');
+    for (const row of page.rows) {
+      check(!seenRows.has(row[idKey]), openOrders ? 'DUPLICATE_ORDER' : 'DUPLICATE_HISTORY_ROW');
+      if (openOrders) check(workingStatuses.has(row.status) || terminalStatuses.has(row.status), 'UNKNOWN_ORDER_STATUS');
     }
-    for (const order of page.rows) {
-      seenOrders.add(order.order_id);
-      (workingStatuses.has(order.status) ? working : terminal).push(order);
-    }
-    seenFlags.add(flag);
-    expectedFlag = page.next_page_flag;
-    return { page_count: seenFlags.size, completed: page.completed, next_page_flag: expectedFlag };
+    // Advance only after validating the entire exchange, so a rejected page can be retried.
+    for (const row of page.rows) seenRows.add(row[idKey]);
+    startedAtContinuation ??= flag !== '';
+    selectors = selection; expectedFlag = page.next_page_flag; seenFlags.add(flag);
+    return { ...page, page_count: seenFlags.size, started_at_continuation: startedAtContinuation };
+  };
+}
+
+/** Inspect the selected page even when earlier history pages were not saved. */
+export function createMoomooSecuritiesHistoryPages(tool, scope) {
+  check(Object.hasOwn(securitiesHistoryRoutes, tool), 'UNSUPPORTED');
+  return Object.freeze({ append: savedSecuritiesPages(tool, scope) });
+}
+
+/** Only a complete listing from the beginning can establish the working-order baseline. */
+export function createMoomooOpenOrdersBaseline(scope) {
+  const read = savedSecuritiesPages('account_orders', scope), working = [], terminal = [];
+  const market = scope.trd_market;
+  let completed = false, pageCount = 0;
+  function append(exchange) {
+    const page = read(exchange);
+    for (const order of page.rows) (workingStatuses.has(order.status) ? working : terminal).push(order);
+    completed = page.completed; pageCount = page.page_count;
+    return { page_count: pageCount, completed, next_page_flag: page.next_page_flag };
   }
   function result() {
-    check(expectedFlag === null, 'INCOMPLETE_BASELINE');
-    return { account_binding: 'request-path', market: scope.trd_market, page_count: seenFlags.size,
+    check(completed, 'INCOMPLETE_BASELINE');
+    return { account_binding: 'request-path', market, page_count: pageCount,
       working_orders: [...working], terminal_orders: [...terminal] };
   }
   return Object.freeze({ append, result });

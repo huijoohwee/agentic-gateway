@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildMoomooSecuritiesHistoryRequest as build, projectMoomooSecuritiesHistoryResponse as project,
   buildMoomooOpenOrdersRequest as openRequest, projectMoomooOpenOrdersResponse as openPage,
   createMoomooOpenOrdersBaseline as startBaseline, replayMoomooOpenOrdersBaseline as baseline,
-  securitiesHistoryRoutes } from 'agentic-gateway/connectors/moomoo-securities-history';
+  createMoomooSecuritiesHistoryPages as historyPages, securitiesHistoryRoutes } from 'agentic-gateway/connectors/moomoo-securities-history';
 import catalog from '../connectors/moomoo-catalog.json' with { type: 'json' };
 
 const orders = 'account_orders_history', fills = 'account_fills_history';
@@ -79,6 +79,33 @@ test('applies the documented ninety-day default when just one endpoint is known'
 
 const scope = { acc_id: inputs.acc_id, trd_market: 'US' };
 const exchange = (requestInputs, rows, flags) => ({ request: openRequest(requestInputs), wire: wire('orders', rows, flags) });
+
+test('saved history keeps its original account, market, symbol and time window across opaque continuations', () => {
+  const scope = { acc_id: inputs.acc_id, trd_market: inputs.trd_market };
+  for (const [tool, key, row, identity] of [[orders, 'orders', order, 'order_id'], [fills, 'order_fills', fill, 'deal_id']]) {
+    const history = historyPages(tool, scope);
+    const saved = (selectors, rows, flags) => ({ request: build(tool, selectors), wire: wire(key, rows, flags) });
+    const first = history.append(saved({ ...inputs, page_flag: 'older' }, [row], { completed: false, page_flag: 'next +/' }));
+    assert.equal(first.started_at_continuation, true); assert.equal(first.page_count, 1);
+    assert.equal(first.window_start_us, inputs.start); assert.equal(first.window_end_us, inputs.end);
+    const next = { ...inputs, page_flag: first.next_page_flag };
+    for (const change of [{ acc_id: '7' }, { trd_market: 'HK' }, { start: '1' }, { end: '9007199254740998' }, { code: 'US.OTHER' }])
+      assert.throws(() => history.append(saved({ ...next, ...change }, [])), /REQUEST_MISMATCH|HISTORY_SELECTION_CHANGED/);
+    assert.throws(() => history.append(saved({ ...next, page_flag: 'wrong' }, [])), /INVALID_CONTINUATION/);
+    assert.throws(() => history.append(saved(next, [], { completed: false, page_flag: 'older' })), /INVALID_CONTINUATION/);
+    assert.throws(() => history.append(saved(next, [row])), /DUPLICATE_HISTORY_ROW/);
+    const last = history.append(saved(next, [{ ...row, [identity]: 'second' }]));
+    assert.equal(last.page_count, 2); assert.equal(last.rows.length, 1);
+    assert.equal(last.completed, true); assert.equal(last.next_page_flag, null); assert.equal(last.started_at_continuation, true);
+    assert.throws(() => history.append(saved(next, [])), /EXTRA_PAGE/);
+  }
+  assert.throws(() => historyPages('account_cancel_order', scope), /UNSUPPORTED/);
+  for (const [selectors, lower, upper] of [[{}, null, null], [{ end: '10' }, '0', '10'],
+    [{ start: '10' }, '10', String(90n * 86400000000n + 10n)]]) {
+    const page = historyPages(fills, scope).append({ request: build(fills, { ...scope, ...selectors }), wire: wire('order_fills', []) });
+    assert.equal(page.started_at_continuation, false); assert.equal(page.window_start_us, lower); assert.equal(page.window_end_us, upper);
+  }
+});
 
 test('open orders use the published account route and an opaque flag to read the next page', () => {
   const route = catalog.tools.find(t => t.name === 'account_orders_active').http;
