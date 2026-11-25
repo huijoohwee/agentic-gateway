@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
+import { publicRoutes } from 'agentic-gateway/connectors/moomoo-coverage';
 import catalog from 'agentic-gateway/connectors/moomoo-catalog.json' with { type: 'json' };
 import { buildMoomooWatchlistRequest as buildWatchlist, projectMoomooWatchlistResponse as readWatchlist,
   watchlistRestRoutes } from 'agentic-gateway/connectors/moomoo-watchlist';
@@ -73,8 +74,9 @@ test('watchlist members retain derivative fields, large security IDs, exact pric
 });
 
 test('the native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
+  const documented = new Set(publicRoutes(catalog).filter(row => row.transport === 'REST').flatMap(row => row.sources.map(source => source.http)));
   for (const [name, route] of Object.entries(marketRestRoutes)) {
-    if (name.startsWith('rest_')) assert.ok(catalog.sources.some(doc => doc.routes?.includes(route)), route);
+    if (name.startsWith('rest_')) assert.ok(documented.has(route), route);
     else assert.equal(catalog.tools.find(t => t.name === name).http, route);
   }
   assert.deepEqual(build(quote, { symbols: [symbol, 'US.AAPL'] }), { method: 'POST', path: '/api/v1.0/quote/stock-quote', body: { code_list: [symbol, 'US.AAPL'] } });
