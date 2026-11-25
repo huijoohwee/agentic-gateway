@@ -3,6 +3,8 @@ import { WireNumber, check, only, root, string, integer, readWire, decimal, meas
 import { capitalFlowRoutes, flowNumbers, flowRequest, flowPage } from './moomoo-capital-flow.mjs';
 import { calendarRoutes, calendarPage, calendarRequest } from './moomoo-calendar.mjs';
 import { rankRoutes, rankNumberKeys, rankRequest, rankPage } from './moomoo-rank.mjs';
+import { ipoRoutes, ipoNumberKeys, ipoRequest, ipoPage } from './moomoo-ipo.mjs';
+export { describeMoomooIpo } from './moomoo-ipo.mjs';
 export { describeMoomooRanking } from './moomoo-rank.mjs';
 export { watchlistRestRoutes, buildMoomooWatchlistRequest, projectMoomooWatchlistResponse } from './moomoo-watchlist.mjs';
 
@@ -10,6 +12,7 @@ export const marketRestRoutes = Object.freeze({
   ...capitalFlowRoutes,
   ...calendarRoutes,
   ...rankRoutes,
+  ...ipoRoutes,
   quote_stock_quote: 'POST ' + root + 'stock-quote',
   quote_order_book: 'POST ' + root + 'order-book',
   quote_rt_ticker: 'GET ' + root + '{symbol}/rt-ticker',
@@ -92,6 +95,7 @@ export function buildMoomooSessionArguments(tool, inputs) {
 export function buildMoomooMarketRequest(tool, inputs) {
   check(typeof tool === 'string' && Object.hasOwn(marketRestRoutes, tool), 'UNSUPPORTED');
   const [method, path] = marketRestRoutes[tool].split(' ');
+  if (Object.hasOwn(ipoRoutes, tool)) return ipoRequest(tool, inputs, path);
   if (Object.hasOwn(rankRoutes, tool)) return rankRequest(tool, inputs, path);
   if (Object.hasOwn(calendarRoutes, tool)) return calendarRequest(tool, inputs, path);
   if (Object.hasOwn(capitalFlowRoutes, tool)) return flowRequest(tool, inputs, path, symbol);
@@ -285,21 +289,23 @@ export function projectMoomooMarketResponse(tool, inputs, wire) {
   const capital = Object.hasOwn(capitalFlowRoutes, tool);
   const calendar = Object.hasOwn(calendarRoutes, tool);
   const rank = Object.hasOwn(rankRoutes, tool);
-  const response = readWire(wire, capital ? flowNumbers : rank ? rankNumberKeys(tool) : undefined);
+  const ipo = Object.hasOwn(ipoRoutes, tool);
+  const response = readWire(wire, ipo ? ipoNumberKeys(tool) : capital ? flowNumbers : rank ? rankNumberKeys(tool) : undefined);
   check(Number.isSafeInteger(response?.ret_code), 'INVALID_PAGE');
   if (response.ret_code !== 0) {
-    if ((capital || calendar || rank) && response.ret_code === -10) check(false, 'NO_DATA');
-    if ((capital || calendar || rank) && response.ret_code === -8) check(false, 'UNSUPPORTED');
+    if ((capital || calendar || rank || ipo) && response.ret_code === -10) check(false, 'NO_DATA');
+    if ((capital || calendar || rank || ipo) && response.ret_code === -8) check(false, 'UNSUPPORTED');
     if (tool === 'quote_history_kline') {
       if (response.ret_code === -3 && response.error?.code === 'invalid_page_token') check(false, 'INVALID_PAGE_TOKEN');
       const errors = { [-8]: 'UNSUPPORTED', [-11]: 'RATE_LIMITED', [-12]: 'HISTORY_QUOTA_EXCEEDED', [-13]: 'QUOTA_UNAVAILABLE' };
       if (Object.hasOwn(errors, response.ret_code)) check(false, errors[response.ret_code]);
     }
-    if (calendar && response.ret_code === -9) check(false, 'PERMISSION_DENIED');
-    if (calendar && response.ret_code === -11) check(false, 'RATE_LIMITED');
+    if ((calendar || ipo) && response.ret_code === -9) check(false, 'PERMISSION_DENIED');
+    if ((calendar || ipo) && response.ret_code === -11) check(false, 'RATE_LIMITED');
     const codes = { [-3]: 'INVALID_PARAMETER', [-7]: 'INVALID_SYMBOL', ...(tool === 'quote_cur_kline' && { [-4]: 'INVALID_SYMBOL' }) };
     check(false, Object.hasOwn(codes, response.ret_code) ? codes[response.ret_code] : 'PROVIDER_ERROR');
   }
+  if (ipo) return ipoPage(tool, response);
   if (rank) return rankPage(tool, inputs, response);
   if (calendar) return calendarPage(tool, inputs, response);
   if (capital) return flowPage(tool, inputs, response);
