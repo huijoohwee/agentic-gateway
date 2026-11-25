@@ -235,3 +235,27 @@ test('trading days bind inclusive market-local dates and preserve the providerâ€
   assert.throws(() => result([{ ...whole, trade_date_type: 'UNKNOWN' }]), /INVALID_PAGE/);
   assert.throws(() => project(tool, inputs, JSON.stringify({ ret_code: 0, data: { trading_days: [] }, pagination: { has_more: true } })), /INCOMPLETE_PAGE/);
 });
+
+test('capital distribution and historical flow retain exact native-currency values and cursor semantics', () => {
+  const snapshot = 'quote_capital_distribution', history = 'quote_capital_flow_history';
+  const args = { symbol, period_type: 'WEEK', start: '2026-04-23', end: '2026-05-23', count: 3 };
+  assert.equal(build(snapshot, { symbol }).path, '/api/v1.0/quote/HK.00700/capital-distribution');
+  assert.equal(build(history, args).path, '/api/v1.0/quote/HK.00700/capital-flow/history?period_type=WEEK&start=2026-04-23&end=2026-05-23&count=3');
+  const balances = { update_time: 1780531198000 };
+  for (const side of ['in', 'out']) for (const size of ['super', 'big', 'mid', 'small']) balances['capital_' + side + '_' + size] = 1;
+  const exact = wire(balances).replace('"capital_in_super":1', '"capital_in_super":9007199254740993.1000');
+  assert.equal(project(snapshot, { symbol }, exact).rows[0].capital_in_super, '9007199254740993.1000');
+  const entry = { capital_flow_item_time: 1776873600000, in_flow: 1, main_in_flow: 1, super_in_flow: 1, big_in_flow: 1, mid_in_flow: 1, sml_in_flow: -2 };
+  const page = (more, next, items) => JSON.stringify({ ret_code: 0, data: { flow_list: items, next_time: next }, pagination: { has_more: more } });
+  const next = entry.capital_flow_item_time - 1;
+  const parsed = project(history, args, page(true, next, [entry]));
+  assert.deepEqual(parsed.pagination, { has_more: true, next_time: next });
+  assert.equal(parsed.rows[0].sml_in_flow, '-2');
+  assert.equal(Object.hasOwn(parsed.rows[0], 'main_deal_ratio'), false);
+  assert.throws(() => project(history, { ...args, next_time: next }, page(false, null, [entry])), /INVALID_PAGE/);
+  assert.throws(() => project(history, args, page(true, next, [])), /INVALID_PAGE/);
+  assert.throws(() => project(history, args, page(false, null, [entry, entry])), /INVALID_PAGE/);
+  assert.throws(() => project(snapshot, { symbol }, '{"ret_code":-10}'), /NO_DATA/);
+  for (const bad of [{ count: 1001 }, { period_type: 'YEAR' }, { start: '2026-02-30' }, { account: 'private' }])
+    assert.throws(() => build(history, { symbol, ...bad }), /INVALID_PARAMETER/);
+});

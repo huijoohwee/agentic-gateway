@@ -18,11 +18,11 @@ export function string(value) { check(typeof value === 'string', 'INVALID_PAGE')
 
 // Preserve the actual JSON number token. A quoted decimal and a JSON number have distinct origins.
 export class WireNumber { constructor(source) { this.source = source; } }
-export function readWire(wire) {
+export function readWire(wire, exactKeys = decimalKeys) {
   check(typeof wire === 'string' && wire.length <= 480000 && new TextEncoder().encode(wire).length <= 480000, 'INVALID_WIRE');
   try {
     return JSON.parse(wire, (key, value, context) => {
-      if (typeof value !== 'number' || !decimalKeys.has(key)) return value;
+      if (typeof value !== 'number' || !exactKeys.has(key)) return value;
       check(typeof context?.source === 'string', 'PRECISION_UNKNOWN');
       return new WireNumber(context.source);
     });
