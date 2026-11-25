@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMoomooSecuritiesHistoryRequest as build, projectMoomooSecuritiesHistoryResponse as project,
+  buildMoomooOpenOrdersRequest as openRequest, projectMoomooOpenOrdersResponse as openPage,
+  replayMoomooOpenOrdersBaseline as baseline,
   securitiesHistoryRoutes } from 'agentic-gateway/connectors/moomoo-securities-history';
 import catalog from '../connectors/moomoo-catalog.json' with { type: 'json' };
 
@@ -73,4 +75,70 @@ test('applies the documented ninety-day default when just one endpoint is known'
   assert.throws(() => project(fills, ending, wire('order_fills', [{...fill, updated_time: 29}])), /OUTSIDE_HISTORY_WINDOW/);
   assert.throws(() => project(fills, starting, wire('order_fills', [{...fill, updated_time: String(span + 21n)}])), /OUTSIDE_HISTORY_WINDOW/);
   assert.equal(project(fills, ending, wire('order_fills', [{ ...fill, updated_time: 30 }])).rows.length, 1);
+});
+
+const scope = { acc_id: inputs.acc_id, trd_market: 'US' };
+const exchange = (requestInputs, rows, flags) => ({ request: openRequest(requestInputs), wire: wire('orders', rows, flags) });
+
+test('open orders use the published account route and an opaque flag to read the next page', () => {
+  const route = catalog.tools.find(t => t.name === 'account_orders_active').http;
+  const request = openRequest({ ...scope, page_size: 1, page_flag: '次 +/&=' });
+  const [path, query] = request.path.split('?');
+  assert.equal(request.method + ' ' + path, route.replace('{acc_id}', scope.acc_id));
+  assert.equal(new URLSearchParams(query).get('page_flag'), '次 +/&=');
+  assert.throws(() => openRequest({ ...scope, page_size: 101 }));
+  for (const key of ['start', 'end', 'code']) assert.throws(() => openRequest({ ...scope, [key]: '1' }));
+  const response = openPage(scope, wire('orders', [order], { completed: false, page_flag: '次 +/&=' }));
+  assert.equal(response.next_page_flag, '次 +/&=');
+  assert.equal(response.rows[0].quantity, order.qty);
+  assert.equal(response.account_binding, 'request-path');
+  assert.throws(() => openPage(scope, wire('orders', [order, order])), /DUPLICATE_ORDER/);
+});
+
+test('classifies all published statuses across a complete chain, including older working orders and recent closures', () => {
+  const working = ['WAITING_SUBMIT', 'SUBMITTING', 'SUBMITTED', 'FILLED_PART'];
+  const terminal = ['FILLED_ALL', 'CANCELLED_PART', 'CANCELLED_ALL', 'FAILED', 'DISABLED', 'DELETED'];
+  const rows = statuses => statuses.map(status => ({ ...order, order_id: status, order_status: status, create_time: 1 }));
+  const flag = '次 +/&=';
+  const first = exchange(scope, rows(terminal), { completed: false, page_flag: flag });
+  const second = exchange({ ...scope, page_flag: flag, page_size: 10 }, rows(working));
+  const path = second.request.path.split('?')[0];
+  second.request.path = path + '?page_flag=' + encodeURIComponent(flag) + '&page_size=10&trd_market=US';
+  const result = baseline(scope, [first, second]);
+  assert.deepEqual(result.working_orders.map(row => row.status), working);
+  assert.deepEqual(result.terminal_orders.map(row => row.status), terminal);
+  assert.equal(result.working_orders[0].created_us, '1');
+  assert.equal(result.page_count, 2);
+  assert.deepEqual(baseline(scope, [exchange({ ...scope, page_flag: '' }, [])]).working_orders, []);
+});
+
+test('rejects partial, repeated, cyclic, surplus and cross-account or cross-market pages', () => {
+  const first = exchange(scope, [order], { completed: false, page_flag: 'a' });
+  const next = (page_flag, rows = [], flags) => exchange({ ...scope, page_flag }, rows, flags);
+  assert.throws(() => baseline(scope, []), /INCOMPLETE_BASELINE/);
+  assert.throws(() => baseline(scope, [first]), /INCOMPLETE_BASELINE/);
+  assert.throws(() => baseline(scope, [next('a')]), /INVALID_CONTINUATION/);
+  assert.throws(() => baseline(scope, [first, next('b')]), /INVALID_CONTINUATION/);
+  assert.throws(() => baseline(scope, [first, next('a', [order])]), /DUPLICATE_ORDER/);
+  assert.throws(() => baseline(scope, [first, next('a', [], { completed: false, page_flag: 'b' }),
+    next('b', [], { completed: false, page_flag: 'a' }), next('a')]), /INVALID_CONTINUATION/);
+  assert.throws(() => baseline(scope, [first, next('a'), next('b')]), /EXTRA_PAGE/);
+  for (const change of [{ acc_id: '4' }, { trd_market: 'HK' }]) {
+    assert.throws(() => baseline(scope, [first, exchange({ ...scope, ...change, page_flag: 'a' }, [])]), /REQUEST_MISMATCH/);
+  }
+  assert.throws(() => baseline(scope, [exchange(scope, [{ ...order, account_id: '5' }])]), /ACCOUNT_MISMATCH/);
+  assert.throws(() => baseline(scope, [exchange(scope, [{ ...order, trd_market: 'HK' }])]), /MARKET_MISMATCH/);
+});
+
+test('refuses an ambiguous baseline while keeping unknown provider statuses inspectable on the page', () => {
+  const page = exchange(scope, [{ ...order, order_status: 'NEW_STATE' }]);
+  assert.equal(openPage(scope, page.wire).rows[0].status, 'NEW_STATE');
+  assert.throws(() => baseline(scope, [page]), /UNKNOWN_ORDER_STATUS/);
+  const replace = request => () => baseline(scope, [{ ...page, request }]);
+  assert.throws(replace(build(orders, scope)), /REQUEST_MISMATCH/);
+  assert.throws(replace({ ...page.request, method: 'POST' }), /REQUEST_MISMATCH/);
+  for (const suffix of ['&trd_market=US', '&acc_id=7', '#fragment']) {
+    assert.throws(replace({ method: 'GET', path: page.request.path + suffix }), /REQUEST_MISMATCH/);
+  }
+  assert.throws(() => baseline(scope, [exchange({ ...scope, page_size: 0 }, [])]), /INVALID_PAGE_SIZE/);
 });
