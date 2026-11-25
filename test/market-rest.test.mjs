@@ -73,7 +73,10 @@ test('watchlist members retain derivative fields, large security IDs, exact pric
 });
 
 test('the native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
-  for (const [name, route] of Object.entries(marketRestRoutes)) assert.equal(catalog.tools.find(t => t.name === name).http, route);
+  for (const [name, route] of Object.entries(marketRestRoutes)) {
+    if (name.startsWith('rest_')) assert.ok(catalog.sources.some(doc => doc.routes?.includes(route)), route);
+    else assert.equal(catalog.tools.find(t => t.name === name).http, route);
+  }
   assert.deepEqual(build(quote, { symbols: [symbol, 'US.AAPL'] }), { method: 'POST', path: '/api/v1.0/quote/stock-quote', body: { code_list: [symbol, 'US.AAPL'] } });
   assert.deepEqual(build(depth, { symbol, count: 60 }), { method: 'POST', path: '/api/v1.0/quote/order-book', body: { code: symbol, num: 60 } });
   assert.deepEqual(build(tape, { symbol, count: 750, period: ['BEFORE', 'AFTER'] }), { method: 'GET', path: '/api/v1.0/quote/HK.00700/rt-ticker?num=750&period=BEFORE&period=AFTER' });
@@ -258,4 +261,36 @@ test('capital distribution and historical flow retain exact native-currency valu
   assert.throws(() => project(snapshot, { symbol }, '{"ret_code":-10}'), /NO_DATA/);
   for (const bad of [{ count: 1001 }, { period_type: 'YEAR' }, { start: '2026-02-30' }, { account: 'private' }])
     assert.throws(() => build(history, { symbol, ...bad }), /INVALID_PARAMETER/);
+});
+
+test('dividend dates and cursor bindings follow the requested market day and preserve source statements', () => {
+  const op = 'rest_dividend_calendar', args = { market: 'US', date: '2026-10-16', page_size: 1, page_flag: 'a/b+1' };
+  assert.equal(build(op, args).path, '/api/v1.0/quote/dividend-calendar?market=US&date=2026-10-16&page_size=1&page_flag=a%2Fb%2B1');
+  const item = { code: 'US.AAPL', name: 'example', statement: 'USD 0.1000 per share', record_date: '', ex_date: args.date, dividend_payable_date: '2026-11-05' };
+  const page = (row, flag = 'b/2') => JSON.stringify({ ret_code: 0, data: { items: [row] }, pagination: { total: 2, completed: false, page_flag: flag } });
+  assert.deepEqual(project(op, args, page(item)), { rows: [item], pagination: { completed: false, next_cursor: 'b/2', total: 2 } });
+  assert.throws(() => project(op, args, page({ ...item, code: 'HK.00700' })), /SECURITY_MISMATCH/);
+  assert.throws(() => project(op, args, page({ ...item, ex_date: '2026-10-17' })), /DATE_RANGE_MISMATCH/);
+  assert.throws(() => project(op, args, page(item, args.page_flag)), /INVALID_PAGE/);
+  for (const bad of [{ market: 'all' }, { page_size: 201 }, { date: '2026-02-30' }, { date: 20261016 }, { page_flag: 'x'.repeat(65) }, { offset: 2 }])
+    assert.throws(() => build(op, { ...args, ...bad }), /INVALID_PARAMETER/);
+});
+
+test('economic events preserve source type and second precision across UTC+8 midnight, filters and empty pages', () => {
+  const op = 'rest_economic_calendar_list';
+  const at = Date.parse('2026-10-15T16:00:00Z') / 1000;
+  const args = { begin_date: '2026-10-16', end_date: '', tab_type: 'ECONOMIC_DATA', market: 'ALL', star: 5, only_focus: true };
+  assert.equal(build(op, args).path, '/api/v1.0/quote/economic-calendar/list?begin_date=2026-10-16&end_date=&tab_type=ECONOMIC_DATA&market=ALL&star=5&only_focus=true');
+  const item = { article_id: '9007199254740993', item_type: 'ECONOMIC_DATA', timestamp: at, star: 5, country: 'US',
+    title: 'Release', previous: '0.1000%', consensus: '', actual: '0.1200%', detail_url: '', is_focus: true };
+  const page = items => JSON.stringify({ ret_code: 0, data: { items }, pagination: { total: items.length, completed: true, page_flag: '' } });
+  assert.deepEqual(project(op, args, page([item])), { rows: [item], pagination: { completed: true, next_cursor: null, total: 1 } });
+  assert.deepEqual(project(op, args, page([])).rows, []);
+  assert.throws(() => project(op, args, page([{ ...item, timestamp: at - 1 }])), /DATE_RANGE_MISMATCH/);
+  for (const override of [{ star: 2 }, { is_focus: false }, { actual: 0.12 }, { timestamp: at * 1000 }])
+    assert.throws(() => project(op, args, page([{ ...item, ...override }])));
+  for (const bad of [{ end_date: '2026-10-15' }, { tab_type: 'OTHER' }, { star: 6 }, { only_focus: 'true' }, { page_size: 101 }])
+    assert.throws(() => build(op, { ...args, ...bad }), /INVALID_PARAMETER/);
+  for (const [code, error] of [[-9, /PERMISSION_DENIED/], [-10, /NO_DATA/], [-11, /RATE_LIMITED/]])
+    assert.throws(() => project(op, args, JSON.stringify({ ret_code: code })), error);
 });
