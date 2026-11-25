@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
+import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes, describeMoomooCompany } from 'agentic-gateway/connectors/moomoo-market-rest';
 import { publicRoutes } from 'agentic-gateway/connectors/moomoo-coverage';
 import catalog from 'agentic-gateway/connectors/moomoo-catalog.json' with { type: 'json' };
 import { buildMoomooWatchlistRequest as buildWatchlist, projectMoomooWatchlistResponse as readWatchlist,
@@ -71,6 +71,65 @@ test('watchlist members retain derivative fields, large security IDs, exact pric
   assert.throws(() => readWatchlist(members, input, wire({ security_list: [{ code: symbol, name: 'x', stock_id: -1 }] })), /INVALID_PAGE/);
   assert.throws(() => readWatchlist(members, input, wire({ security_list: [{ code: symbol, name: 'x', listing_date: '2025-02-29' }] })), /INVALID_PAGE/);
   assert.throws(() => readWatchlist(members, input, '{"ret_code":-3}'), /INVALID_PARAMETER/);
+});
+
+test('company research routes preserve documented query values and enforce source limits', () => {
+  const routes = {
+    quote_company_executive_background: 'GET /api/v1.0/quote/HK.00700/company/executive-background?leader_name=%E9%A9%AC%E5%8C%96%E8%85%BE',
+    quote_company_executives: 'GET /api/v1.0/quote/HK.00700/company/executives',
+    quote_company_operational_efficiency: 'GET /api/v1.0/quote/HK.00700/company/operational-efficiency'
+  };
+  for (const [tool, expected] of Object.entries(routes)) {
+    const built = build(tool, tool.endsWith('background') ? { symbol, leader_name: '马化腾' } : { symbol });
+    assert.equal(built.method + ' ' + built.path, expected);
+    assert.equal(catalog.tools.find(row => row.name === tool).http, marketRestRoutes[tool]);
+    const shape = describeMoomooCompany(tool);
+    assert.equal(shape.route, marketRestRoutes[tool]);
+    assert.ok(Object.keys(shape.fields).length > 0);
+    shape.text.push('caller_mutation');
+    assert.ok(!describeMoomooCompany(tool).text.includes('caller_mutation'));
+  }
+  assert.deepEqual(describeMoomooCompany('quote_company_operational_efficiency').pagination, ['pagination']);
+  assert.equal(describeMoomooCompany('quote_company_operational_efficiency').cursor_limit, 1000);
+  assert.throws(() => describeMoomooCompany('quote_company_profile'), /UNSUPPORTED/);
+  assert.equal(build('quote_company_operational_efficiency', { symbol, limit: 100, next_key: '1767110400', currency_code: 'CNY', financial_type: 102 }).path,
+    '/api/v1.0/quote/HK.00700/company/operational-efficiency?limit=100&next_key=1767110400&currency_code=CNY&financial_type=102');
+  for (const [tool, inputs] of [
+    ['quote_company_executive_background', { symbol, leader_name: '' }],
+    ['quote_company_executive_background', { symbol, leader_name: 'x'.repeat(101) }],
+    ['quote_company_executives', { symbol, leader_name: 'x' }],
+    ['quote_company_operational_efficiency', { symbol, limit: 0 }],
+    ['quote_company_operational_efficiency', { symbol, limit: 101 }],
+    ['quote_company_operational_efficiency', { symbol, next_key: 'x'.repeat(1001) }],
+    ['quote_company_operational_efficiency', { symbol, currency_code: 'Cny' }],
+    ['quote_company_operational_efficiency', { symbol, financial_type: 1 }],
+    ['quote_company_executives', { symbol: 'HK../x' }]
+  ]) assert.throws(() => build(tool, inputs), /INVALID_PARAMETER/);
+});
+
+test('company research projections retain source text, numeric tokens, market dates and pagination', () => {
+  const background = project('quote_company_executive_background', { symbol, leader_name: '马化腾' },
+    wire({ brief_background: '長文 · source text' }));
+  assert.deepEqual(background.rows, [{ symbol, leader_name: '马化腾', brief_background: '長文 · source text' }]);
+
+  const executives = project('quote_company_executives', { symbol },
+    '{"ret_code":0,"data":{"executives":[{"leader_name":"马化腾","display_leader_name":"huateng ma","position_name":"Chairman","leader_gender":"male","leader_age":"54","highest_education":"Bachelor","begin_date":945964800000,"begin_date_str":"1999-12-24","issue_date":1779161536000,"issue_date_str":"2026-05-19","shares":9007199254740993,"annual_salary":1234567890.123456789,"annual_salary_currency":"CNY"}]}}');
+  assert.deepEqual(executives.rows, [{ symbol, leader_name: '马化腾', display_leader_name: 'huateng ma', position_name: 'Chairman',
+    leader_gender: 'male', leader_age: '54', highest_education: 'Bachelor', begin_date: 945964800000,
+    begin_date_str: '1999-12-24', issue_date: 1779161536000, issue_date_str: '2026-05-19',
+    shares: '9007199254740993', annual_salary: '1234567890.123456789', annual_salary_currency: 'CNY' }]);
+
+  const efficiency = project('quote_company_operational_efficiency', { symbol, limit: 2 },
+    '{"ret_code":0,"data":{"currency_code":"CNY","item_list":[{"fiscal_year":2025,"financial_type":7,"period_text":"2025/FY","end_date":1767110400000,"end_date_str":"2025-12-31","employee_num":115849,"employee_num_yoy":4.7857,"income_per_capita":6489188.5126000000001,"income_per_capita_yoy":8.6594,"profit_per_capita":2085145.3184,"profit_per_capita_yoy":10.7787,"net_profit_per_capita":1983625.2362,"net_profit_per_capita_yoy":11.6246}]},"pagination":{"has_more":true,"next_key":"1767110400"}}');
+  assert.deepEqual(efficiency.rows[0], { symbol, currency_code: 'CNY', fiscal_year: 2025, financial_type: 7,
+    period_text: '2025/FY', end_date: 1767110400000, end_date_str: '2025-12-31', employee_num: 115849,
+    employee_num_yoy: '4.7857', income_per_capita: '6489188.5126000000001', income_per_capita_yoy: '8.6594',
+    profit_per_capita: '2085145.3184', profit_per_capita_yoy: '10.7787',
+    net_profit_per_capita: '1983625.2362', net_profit_per_capita_yoy: '11.6246' });
+  assert.deepEqual(efficiency.pagination, { has_more: true, next_page_token: '1767110400' });
+  assert.throws(() => project('quote_company_operational_efficiency', { symbol }, '{"ret_code":-10}'), /NO_DATA/);
+  assert.throws(() => project('quote_company_operational_efficiency', { symbol }, '{"ret_code":-8}'), /UNSUPPORTED/);
+  assert.throws(() => project('quote_company_operational_efficiency', { symbol }, wire({ currency_code: 'CNY', item_list: [], pagination: { has_more: true } })), /INVALID_PAGE/);
 });
 
 test('the native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
