@@ -42,6 +42,20 @@ const profiles = {
 export const rankRoutes = Object.freeze(Object.fromEntries(Object.keys(profiles).map(id =>
   [id, 'GET ' + root + 'rank/' + id.slice('rest_rank_'.length).replaceAll('_', '-')])));
 export const rankNumberKeys = tool => new Set([...(profiles[tool].number ?? []), ...(profiles[tool].integer ?? [])]);
+const cursorLimit = 64;
+const pageLimit = profile => profile.maxSize ?? 200;
+
+// Describe the projected row with fresh arrays so a consumer cannot alter wire validation.
+export function describeMoomooRanking(tool) {
+  check(Object.hasOwn(profiles, tool), 'UNSUPPORTED');
+  const profile = profiles[tool];
+  return {
+    textFields: ['code', 'name', ...profile.text],
+    decimalFields: [...(profile.number ?? [])],
+    integerFields: [...(profile.integer ?? [])],
+    maxPageSize: pageLimit(profile), maxCursorLength: cursorLimit,
+  };
+}
 
 function bound(value) {
   check(typeof value === 'string' || (typeof value === 'number' && (!Number.isInteger(value) || Number.isSafeInteger(value))));
@@ -78,14 +92,14 @@ export function rankRequest(tool, input, path) {
       query.append('plate_code', code);
     }
   }
-  if (Object.hasOwn(input, 'page_flag')) { check(opaqueCursor(input.page_flag, 64)); query.set('page_flag', input.page_flag); }
-  if (Object.hasOwn(input, 'page_size')) query.set('page_size', integer(input.page_size, 1, profile.maxSize ?? 200));
+  if (Object.hasOwn(input, 'page_flag')) { check(opaqueCursor(input.page_flag, cursorLimit)); query.set('page_flag', input.page_flag); }
+  if (Object.hasOwn(input, 'page_size')) query.set('page_size', integer(input.page_size, 1, pageLimit(profile)));
   return { method: 'GET', path: query.size ? path + '?' + query : path };
 }
 export function rankPage(tool, input, response) {
   const profile = profiles[tool], items = response.data?.items;
   check(Array.isArray(items) && items.length <= (input.page_size ?? profile.defaultSize ?? 10), 'INVALID_PAGE');
-  const pagination = cursorPagination(response.pagination, input.page_flag, 64);
+  const pagination = cursorPagination(response.pagination, input.page_flag, cursorLimit);
   const market = profile.fixedMarket ?? input.market;
   const rows = items.map(item => {
     check(item && typeof item === 'object' && !Array.isArray(item), 'INVALID_PAGE');

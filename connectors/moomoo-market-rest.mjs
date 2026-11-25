@@ -3,6 +3,7 @@ import { WireNumber, check, only, root, string, integer, readWire, decimal, meas
 import { capitalFlowRoutes, flowNumbers, flowRequest, flowPage } from './moomoo-capital-flow.mjs';
 import { calendarRoutes, calendarPage, calendarRequest } from './moomoo-calendar.mjs';
 import { rankRoutes, rankNumberKeys, rankRequest, rankPage } from './moomoo-rank.mjs';
+export { describeMoomooRanking } from './moomoo-rank.mjs';
 export { watchlistRestRoutes, buildMoomooWatchlistRequest, projectMoomooWatchlistResponse } from './moomoo-watchlist.mjs';
 
 export const marketRestRoutes = Object.freeze({
