@@ -1,0 +1,109 @@
+{
+  "huijoohwee.github.io": {
+    "revision": "f07f1a3c27d6936f86233d750d8db7b7690d5fb4",
+    "entries": [
+      {
+        "id": "guideline/prd-tad-adr-mvp-gtm",
+        "path": "guidelines/prd-tad-adr-mvp-gtm-guidelines.md",
+        "aliases": [
+          "prd-tad"
+        ],
+        "tokens": [
+          "/prd-tad.create"
+        ]
+      },
+      {
+        "id": "guideline/pd-bp-fm",
+        "path": "guidelines/pd-bp-fm-guidelines.md",
+        "aliases": [
+          "venture-record"
+        ]
+      },
+      {
+        "id": "guideline/pitch-deck",
+        "path": "guidelines/pitch-deck-guidelines.md",
+        "aliases": [
+          "pitch-deck"
+        ],
+        "tokens": [
+          "#pitch-deck",
+          "/artifact.create"
+        ]
+      },
+      {
+        "id": "guideline/business-plan",
+        "path": "guidelines/business-plan-guidelines.md",
+        "aliases": [
+          "business-plan"
+        ],
+        "tokens": [
+          "#business-plan",
+          "/artifact.create"
+        ]
+      },
+      {
+        "id": "guideline/financial-model",
+        "path": "guidelines/financial-model-guidelines.md",
+        "aliases": [
+          "financial-model"
+        ],
+        "tokens": [
+          "#financial-model",
+          "/artifact.create"
+        ]
+      },
+      {
+        "id": "guideline/adlc",
+        "path": "guidelines/adlc-guidelines.md"
+      },
+      {
+        "id": "guideline/lean-startup",
+        "path": "guidelines/lean-startup-guidelines.md"
+      },
+      {
+        "id": "schema/agentic-rag-context",
+        "path": "schema/agentic-rag/v1/context.jsonld",
+        "aliases": [
+          "rag-context"
+        ]
+      }
+    ]
+  },
+  "agentic-os": {
+    "revision": "b9b13e19b16f0b55eb169fa4bfaa1cfce4241d75",
+    "entries": [
+      {
+        "id": "route-dictionary/command",
+        "path": "catalog/dictionaries/DICTIONARY-COMMAND.md"
+      },
+      {
+        "id": "route-dictionary/semantic",
+        "path": "catalog/dictionaries/DICTIONARY-SEMANTIC.md"
+      },
+      {
+        "id": "route-dictionary/binding",
+        "path": "catalog/dictionaries/DICTIONARY-BINDING.md"
+      },
+      {
+        "id": "command-catalog/invocation",
+        "path": "catalog/invocation.json"
+      },
+      {
+        "id": "skill/canvas",
+        "path": "skills/canvas/SKILL.md"
+      },
+      {
+        "id": "skill/esp-idf",
+        "path": "skills/esp-idf/SKILL.md"
+      },
+      {
+        "id": "skill/software-forensics",
+        "path": "skills/software-forensics/SKILL.md"
+      },
+      {
+        "id": "skill/trading",
+        "path": "skills/trading/SKILL.md"
+      }
+    ]
+  }
+}

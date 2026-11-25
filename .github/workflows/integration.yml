@@ -16,3 +16,21 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
+      - name: Verify pinned reference sources
+        shell: bash
+        run: |
+          owners="$RUNNER_TEMP/reference-owners"
+          mapfile -t repositories < <(jq -r 'keys[]' references/owners.json)
+          for owner in "${repositories[@]}"; do
+            [[ "$owner" =~ ^[a-z0-9]+([.-][a-z0-9]+)*$ ]]
+            repo="$owners/$owner"
+            pin=$(jq -er --arg owner "$owner" '.[$owner].revision' references/owners.json)
+            [[ "$pin" =~ ^[0-9a-f]{40}$ ]]
+            git init -q "$repo"
+            git -C "$repo" remote add origin "https://github.com/huijoohwee/$owner.git"
+            git -C "$repo" fetch -q --no-tags --depth=1 --filter=blob:none origin "$pin"
+            jq -r --arg owner "$owner" '.[$owner].entries[].path | "/" + .' references/owners.json |
+              git -C "$repo" sparse-checkout set --no-cone --stdin
+            git -C "$repo" checkout -q --detach FETCH_HEAD
+          done
+          GIT_NO_LAZY_FETCH=1 npm run references:check -- --owners "$owners"
