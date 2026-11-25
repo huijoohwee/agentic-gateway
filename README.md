@@ -33,3 +33,11 @@ For a sequence of saved history pages, call `createMoomooSecuritiesHistoryPages(
 `discoverProviderProfiles(hostFacts)` from `agentic-gateway/provider-profiles` loads metadata only. The optional gateway module registers both manifests with the existing resolver. Each entry returns its input, output, features, losses and per-route requirements. The caller supplies only facts it can establish. For example, a Trading process can declare `snapshot-replay` and `opend-reader` without checking a port or reading credentials.
 
 `createResolver(entries).discover(hostFacts)` also assesses any registered manifest with per-route requirements. `available` means the supplied facts satisfy those requirements. Native invocation still applies the host's binding, cost and grant checks. Existing `discover()` callers retain their original response shape. The manifest revision is the connector’s Git blob ID, and its schema digest covers the functional profile and its route requirements. Consumers pin the complete gateway package.
+
+## Import and export
+
+Applications can import individual transfer modules in a browser or Node host. Each module works offline. Importing one loads no provider connectors.
+
+- `agentic-gateway/transfer/copied-page` stages HTML or plain text supplied with a source URL. Create one store per workspace with `createPageCaptureStore({maxBytes})`. Pass the result of a user-initiated `readCopiedPage()` or a paste to `store.stage(url, html, text)`, then call `store.consume(requestUrl)` once. The host converts the returned source content for display.
+- `agentic-gateway/transfer/browser-files` supplies file picker, write and Blob download functions. Host renderers can supply any file type, including documents, images and 3D scenes. For imports, `importWithFallback` dispatches the selected source to a primary host handler. The host declares which results it accepts and which errors permit fallback.
+- `agentic-gateway/transfer/record-export` exposes `recordFormats`, `serializeRecordView` and `downloadRecordView`. Supply ordered columns and rows, and optionally a transposed orientation. CSV protects spreadsheet formula cells. JSON retains column order, duplicate labels and scalar types. Markdown escapes table syntax. The caller chooses the records its view permits exporting.

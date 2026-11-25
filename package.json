@@ -23,7 +23,19 @@
     "./provider-profiles": "./provider-profiles.mjs",
     "./examples/hyperframes/open-studio.html": "./qualification/hyperframes/open-studio/index.html",
     "./connectors/moomoo-catalog.json": "./connectors/moomoo-catalog.json",
-    "./connectors/moomoo-fields.json": "./connectors/moomoo-fields.json"
+    "./connectors/moomoo-fields.json": "./connectors/moomoo-fields.json",
+    "./transfer/browser-files": {
+      "types": "./transfer/browser-files.d.mts",
+      "default": "./transfer/browser-files.mjs"
+    },
+    "./transfer/copied-page": {
+      "types": "./transfer/copied-page.d.mts",
+      "default": "./transfer/copied-page.mjs"
+    },
+    "./transfer/record-export": {
+      "types": "./transfer/record-export.d.mts",
+      "default": "./transfer/record-export.mjs"
+    }
   },
   "files": [
     "resolver.mjs",
@@ -34,10 +46,11 @@
     "connectors",
     "qualification/hyperframes/index.html",
     "provider-profiles.mjs",
-    "qualification/hyperframes/open-studio/index.html"
+    "qualification/hyperframes/open-studio/index.html",
+    "transfer"
   ],
   "scripts": {
-    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs",
+    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs test/transfer.test.mjs",
     "setup": "agentic-os setup",
     "doctor": "agentic-os doctor",
     "lane": "agentic-os start",
