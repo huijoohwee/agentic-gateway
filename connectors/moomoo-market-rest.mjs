@@ -5,9 +5,11 @@ import { calendarRoutes, calendarPage, calendarRequest } from './moomoo-calendar
 import { rankRoutes, rankNumberKeys, rankRequest, rankPage } from './moomoo-rank.mjs';
 import { ipoRoutes, ipoNumberKeys, ipoRequest, ipoPage } from './moomoo-ipo.mjs';
 import { researchRestRoutes, buildMoomooResearchRequest, projectMoomooResearchResponse } from './moomoo-research.mjs';
+import { arkRestRoutes, buildMoomooArkRequest, projectMoomooArkResponse } from './moomoo-ark.mjs';
 export { describeMoomooIpo } from './moomoo-ipo.mjs';
 export { describeMoomooRanking } from './moomoo-rank.mjs';
 export { describeMoomooResearch } from './moomoo-research.mjs';
+export { arkRestRoutes, buildMoomooArkRequest, projectMoomooArkResponse, describeMoomooArk } from './moomoo-ark.mjs';
 export { watchlistRestRoutes, buildMoomooWatchlistRequest, projectMoomooWatchlistResponse } from './moomoo-watchlist.mjs';
 
 const companyRoutes = Object.freeze({
@@ -25,6 +27,7 @@ export const marketRestRoutes = Object.freeze({
   ...rankRoutes,
   ...ipoRoutes,
   ...researchRestRoutes,
+  ...arkRestRoutes,
   ...companyRoutes,
   quote_stock_quote: 'POST ' + root + 'stock-quote',
   quote_order_book: 'POST ' + root + 'order-book',
@@ -237,6 +240,7 @@ export function buildMoomooMarketRequest(tool, inputs) {
   if (Object.hasOwn(companyRoutes, tool)) return companyRequest(tool, inputs, path);
   if (Object.hasOwn(ipoRoutes, tool)) return ipoRequest(tool, inputs, path);
   if (Object.hasOwn(researchRestRoutes, tool)) return buildMoomooResearchRequest(tool, inputs);
+  if (Object.hasOwn(arkRestRoutes, tool)) return buildMoomooArkRequest(tool, inputs);
   if (Object.hasOwn(rankRoutes, tool)) return rankRequest(tool, inputs, path);
   if (Object.hasOwn(calendarRoutes, tool)) return calendarRequest(tool, inputs, path);
   if (Object.hasOwn(capitalFlowRoutes, tool)) return flowRequest(tool, inputs, path, symbol);
@@ -427,6 +431,7 @@ function tradingDays(data, inputs) {
 
 export function projectMoomooMarketResponse(tool, inputs, wire) {
   if (Object.hasOwn(researchRestRoutes, tool)) return projectMoomooResearchResponse(tool, inputs, wire);
+  if (Object.hasOwn(arkRestRoutes, tool)) return projectMoomooArkResponse(tool, inputs, wire);
   const request = buildMoomooMarketRequest(tool, inputs);
   const company = Object.hasOwn(companyRoutes, tool);
   const capital = Object.hasOwn(capitalFlowRoutes, tool);
