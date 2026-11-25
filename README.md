@@ -2,6 +2,8 @@
 
 A headless JavaScript resolver for locally configured capabilities. It runs offline in a browser or a Node host with zero runtime dependencies. The host supplies each native adapter and its cost, locality and revision evidence.
 
+Run `npm run dev` to browse the verified reference index locally. Open the printed loopback URL (default port 4174). Use `npm run dev -- --port 0` to request a free port. The preview uses Node.js built-ins and works offline.
+
 Import `createResolver` and `validateManifest` from `agentic-gateway`. Register entries shaped as `{manifest, bindings}`. Each binding is addressed by route. Call `discover()` to list descriptors and configured routes. Pass `discover(hostFacts, { route })` to find every capability advertising a particular route. The optional provider discovery entry accepts the same filter. The reverse lookup uses the pinned Base record-link module distributed with Gateway so it also works directly in an offline browser. Call `invoke(plan, nativeRequest, nativeGrant)` to check the requested pin, route, features and accepted losses before calling the selected native handler. The result carries the capability, revision, declared losses and native response. A native refusal or exception retains its native form. The local v1 profile admits device execution with a known zero provider cost.
 
 Run `npm test` in the source checkout for the portable contract fixtures. The native cross-product qualification runs in [Trading PR 8](https://github.com/huijoohwee/agentic-trading-platform/pull/8) against [Graph PR 2064](https://github.com/huijoohwee/agentic-graph/pull/2064).

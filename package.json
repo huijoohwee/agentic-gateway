@@ -58,7 +58,8 @@
     "references/README.md"
   ],
   "scripts": {
-    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/ark.test.mjs test/ipo.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs test/transfer.test.mjs test/references.test.mjs",
+    "dev": "node tools/dev.mjs",
+    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/ark.test.mjs test/ipo.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs test/transfer.test.mjs test/references.test.mjs test/dev.test.mjs",
     "setup": "agentic-os setup",
     "doctor": "agentic-os doctor",
     "lane": "agentic-os start",
