@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes } from 'agentic-gateway/connectors/moomoo-market-rest';
+import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes, describeMoomooCompany } from 'agentic-gateway/connectors/moomoo-market-rest';
 import { publicRoutes } from 'agentic-gateway/connectors/moomoo-coverage';
 import catalog from 'agentic-gateway/connectors/moomoo-catalog.json' with { type: 'json' };
 import { buildMoomooWatchlistRequest as buildWatchlist, projectMoomooWatchlistResponse as readWatchlist,
@@ -83,7 +83,15 @@ test('company research routes preserve documented query values and enforce sourc
     const built = build(tool, tool.endsWith('background') ? { symbol, leader_name: '马化腾' } : { symbol });
     assert.equal(built.method + ' ' + built.path, expected);
     assert.equal(catalog.tools.find(row => row.name === tool).http, marketRestRoutes[tool]);
+    const shape = describeMoomooCompany(tool);
+    assert.equal(shape.route, marketRestRoutes[tool]);
+    assert.ok(Object.keys(shape.fields).length > 0);
+    shape.text.push('caller_mutation');
+    assert.ok(!describeMoomooCompany(tool).text.includes('caller_mutation'));
   }
+  assert.deepEqual(describeMoomooCompany('quote_company_operational_efficiency').pagination, ['pagination']);
+  assert.equal(describeMoomooCompany('quote_company_operational_efficiency').cursor_limit, 1000);
+  assert.throws(() => describeMoomooCompany('quote_company_profile'), /UNSUPPORTED/);
   assert.equal(build('quote_company_operational_efficiency', { symbol, limit: 100, next_key: '1767110400', currency_code: 'CNY', financial_type: 102 }).path,
     '/api/v1.0/quote/HK.00700/company/operational-efficiency?limit=100&next_key=1767110400&currency_code=CNY&financial_type=102');
   for (const [tool, inputs] of [

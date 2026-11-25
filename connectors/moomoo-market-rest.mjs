@@ -31,6 +31,45 @@ export const marketRestRoutes = Object.freeze({
   quote_trading_days: 'GET ' + root + 'trading-days',
   quote_history_kline: 'GET ' + root + '{symbol}/history-kline',
 });
+const inputField = name => Object.freeze({ source: 'input', path: Object.freeze([name]) });
+const rowField = name => Object.freeze({ path: Object.freeze([name]) });
+const responseField = name => Object.freeze({ source: 'response', path: Object.freeze([name]) });
+const companyShapes = Object.freeze({
+  quote_company_executive_background: Object.freeze({ rows_path: Object.freeze([]), single_row: true,
+    fields: Object.freeze({ symbol: inputField('symbol'), leader_name: inputField('leader_name'), brief_background: rowField('brief_background') }),
+    text: Object.freeze(['symbol', 'leader_name', 'brief_background']), params: Object.freeze({ leader_name: Object.freeze({ length: Object.freeze([1, 100]) }) }) }),
+  quote_company_executives: Object.freeze({ rows_path: Object.freeze(['executives']),
+    fields: Object.freeze({ symbol: inputField('symbol'), leader_name: rowField('leader_name'), display_leader_name: rowField('display_leader_name'),
+      position_name: rowField('position_name'), leader_gender: rowField('leader_gender'), leader_age: rowField('leader_age'),
+      highest_education: rowField('highest_education'), begin_date: rowField('begin_date'), begin_date_str: rowField('begin_date_str'),
+      issue_date: rowField('issue_date'), issue_date_str: rowField('issue_date_str'), shares: rowField('shares'),
+      annual_salary: rowField('annual_salary'), annual_salary_currency: rowField('annual_salary_currency') }),
+    text: Object.freeze(['symbol', 'leader_name', 'display_leader_name', 'position_name', 'leader_gender', 'leader_age', 'highest_education',
+      'begin_date_str', 'issue_date_str', 'annual_salary_currency']), integers: Object.freeze(['begin_date', 'issue_date']),
+    decimal_text: Object.freeze(['shares', 'annual_salary']),
+    nullable: Object.freeze(['display_leader_name', 'position_name', 'leader_gender', 'leader_age', 'highest_education', 'begin_date',
+      'begin_date_str', 'issue_date', 'issue_date_str', 'shares', 'annual_salary', 'annual_salary_currency']), params: Object.freeze({}) }),
+  quote_company_operational_efficiency: Object.freeze({ rows_path: Object.freeze(['item_list']),
+    fields: Object.freeze({ symbol: inputField('symbol'), currency_code: responseField('currency_code'), fiscal_year: rowField('fiscal_year'),
+      financial_type: rowField('financial_type'), period_text: rowField('period_text'), end_date: rowField('end_date'),
+      end_date_str: rowField('end_date_str'), employee_num: rowField('employee_num'), employee_num_yoy: rowField('employee_num_yoy'),
+      income_per_capita: rowField('income_per_capita'), income_per_capita_yoy: rowField('income_per_capita_yoy'),
+      profit_per_capita: rowField('profit_per_capita'), profit_per_capita_yoy: rowField('profit_per_capita_yoy'),
+      net_profit_per_capita: rowField('net_profit_per_capita'), net_profit_per_capita_yoy: rowField('net_profit_per_capita_yoy') }),
+    text: Object.freeze(['symbol', 'currency_code', 'period_text', 'end_date_str']), integers: Object.freeze(['fiscal_year', 'financial_type', 'end_date', 'employee_num']),
+    decimal_text: Object.freeze(['employee_num_yoy', 'income_per_capita', 'income_per_capita_yoy', 'profit_per_capita', 'profit_per_capita_yoy',
+      'net_profit_per_capita', 'net_profit_per_capita_yoy']),
+    nullable: Object.freeze(['employee_num_yoy', 'income_per_capita', 'income_per_capita_yoy', 'profit_per_capita', 'profit_per_capita_yoy',
+      'net_profit_per_capita', 'net_profit_per_capita_yoy']),
+    params: Object.freeze({ limit: Object.freeze({ integer: Object.freeze([1, 100]) }), next_key: Object.freeze({ length: Object.freeze([0, 1000]) }),
+      currency_code: Object.freeze({ currency: true, allow_empty: true }), financial_type: Object.freeze({ enum: Object.freeze([7, 102]) }) }),
+    default_page_size: 10, pagination: Object.freeze(['pagination']), pagination_mode: 'next_key', cursor_limit: 1000,
+    row_limit: Object.freeze({ input: 'limit', fallback: 10 }) }),
+});
+export function describeMoomooCompany(tool) {
+  const shape = companyShapes[tool]; check(shape, 'UNSUPPORTED');
+  return structuredClone({ tool, route: marketRestRoutes[tool], ...shape });
+}
 const sessions = ['NORMAL', 'BEFORE', 'AFTER', 'OVERNIGHT'];
 const intervals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, 26, 29];
 const historyIntervals = [...intervals, 101, 105, 110, 115, 130, 145];
