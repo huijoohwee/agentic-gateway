@@ -36,7 +36,10 @@
     "./transfer/record-export": {
       "types": "./transfer/record-export.d.mts",
       "default": "./transfer/record-export.mjs"
-    }
+    },
+    "./references": "./references.mjs",
+    "./references/index.json": "./references/index.json",
+    "./references/pin.json": "./references/pin.json"
   },
   "files": [
     "resolver.mjs",
@@ -48,10 +51,14 @@
     "qualification/hyperframes/index.html",
     "provider-profiles.mjs",
     "qualification/hyperframes/open-studio/index.html",
-    "transfer"
+    "transfer",
+    "references.mjs",
+    "references/index.json",
+    "references/pin.json",
+    "references/README.md"
   ],
   "scripts": {
-    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/ark.test.mjs test/ipo.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs test/transfer.test.mjs",
+    "test": "node --test test/resolver.test.mjs test/presets.test.mjs test/provider-connectors.test.mjs test/stock-screen.test.mjs test/market-rest.test.mjs test/ark.test.mjs test/ipo.test.mjs test/trade-event.test.mjs test/securities-history.test.mjs test/quote-socket.test.mjs test/transfer.test.mjs test/references.test.mjs",
     "setup": "agentic-os setup",
     "doctor": "agentic-os doctor",
     "lane": "agentic-os start",
@@ -61,7 +68,9 @@
     "sync:canonical": "agentic-os canonical-sync",
     "presets:build": "node tools/project-presets.mjs",
     "presets:check": "node tools/project-presets.mjs --check",
-    "pretest": "npm run presets:check"
+    "pretest": "npm run presets:check && npm run references:check",
+    "references:build": "node tools/project-references.mjs",
+    "references:check": "node tools/project-references.mjs --check"
   },
   "license": "MIT",
   "repository": {

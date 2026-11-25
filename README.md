@@ -6,6 +6,10 @@ Import `createResolver` and `validateManifest` from `agentic-gateway`. Register 
 
 Run `npm test` in the source checkout for the portable contract fixtures. The native cross-product qualification runs in [Trading PR 8](https://github.com/huijoohwee/agentic-trading-platform/pull/8) against [Graph PR 2064](https://github.com/huijoohwee/agentic-graph/pull/2064).
 
+## Governing references
+
+Find owner files by ID or alias in the [pinned reference index](references/README.md). The optional `agentic-gateway/references` module lists metadata offline and verifies the bytes supplied by the host on selection.
+
 ## Prompt presets
 
 The optional `agentic-gateway/presets` export reads a pinned metadata index. Its `list()` operation reads zero prompt bodies. `select(idOrAlias, readBody)` reads a single content-addressed text body, checks its SHA-256, and returns the text and metadata. The host handles explicit submission.
