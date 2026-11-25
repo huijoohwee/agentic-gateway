@@ -304,6 +304,18 @@ test('ranking reads honor each endpoint’s market, page limits and documented s
   ];
   for (const [name, args, maximum] of profiles) {
     const tool = 'rest_rank_' + name.replaceAll('-', '_');
+    const shape = marketFacade.describeMoomooRanking(tool);
+    assert.equal(shape.maxPageSize, maximum);
+    assert.equal(shape.maxCursorLength, 64);
+    const market = args.market ?? (name === 'high-dividend-soe' ? 'HK' : 'US');
+    const row = Object.fromEntries([...shape.textFields.map(key => [key, '0.01']),
+      ...shape.decimalFields.map(key => [key, 1.25]), ...shape.integerFields.map(key => [key, 3])]);
+    row.code = market + '.ABC';
+    const response = { ret_code: 0, data: { items: [row] }, pagination: { page_flag: '', completed: true, total: 1 } };
+    const projected = project(tool, args, JSON.stringify(response)).rows[0];
+    assert.deepEqual(projected, Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value)])));
+    shape.textFields.push('foreign');
+    assert.ok(!marketFacade.describeMoomooRanking(tool).textFields.includes('foreign'));
     const request = build(tool, { ...args, page_size: maximum, page_flag: 'next/?+1' });
     const url = new URL(request.path, 'https://example.test');
     assert.equal(request.method, 'GET'); assert.equal(url.pathname, '/api/v1.0/quote/rank/' + name);
@@ -316,6 +328,7 @@ test('ranking reads honor each endpoint’s market, page limits and documented s
     assert.throws(() => project(tool, args, JSON.stringify({ ret_code: -10 })), /NO_DATA/);
   }
   const short = 'rest_rank_short_selling';
+  assert.throws(() => marketFacade.describeMoomooRanking('toString'), /UNSUPPORTED/);
   assert.deepEqual(new URL(build(short, { market: 'HK', plate_code: ['BK1', 'BK2'] }).path, 'https://example.test').searchParams.getAll('plate_code'), ['BK1', 'BK2']);
   assert.throws(() => build(short, { market: 'HK', plate_code: Array(21).fill('BK') }), /INVALID_PARAMETER/);
   assert.throws(() => build('rest_rank_us_overnight', { market: 'US' }), /INVALID_PARAMETER/);
