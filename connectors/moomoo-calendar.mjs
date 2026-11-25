@@ -1,4 +1,4 @@
-import { check, integer, marketDate, only, root, string } from './moomoo-rest-wire.mjs';
+import { check, cursorPagination, integer, marketDate, opaqueCursor, only, root, string } from './moomoo-rest-wire.mjs';
 
 // Local REST mapping identifiers. These endpoints have no tool in the public MCP directory.
 export const calendarRoutes = Object.freeze({
@@ -8,7 +8,6 @@ export const calendarRoutes = Object.freeze({
 const markets = ['HK', 'US', 'SG', 'JP', 'MY', 'CN', 'CA', 'AU'];
 const tabs = ['ECONOMIC_DATA', 'ECONOMIC_EVENT', 'HOLIDAY', 'SELECTION'];
 const economic = tool => tool === 'rest_economic_calendar_list';
-const cursor = (value, max) => typeof value === 'string' && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value);
 
 export function calendarRequest(tool, inputs, path) {
   const events = economic(tool);
@@ -29,7 +28,7 @@ export function calendarRequest(tool, inputs, path) {
     marketDate(inputs.date, 'INVALID_PARAMETER');
   }
   if (Object.hasOwn(inputs, 'page_size')) integer(inputs.page_size, 1, events ? 100 : 200);
-  if (Object.hasOwn(inputs, 'page_flag')) check(cursor(inputs.page_flag, events ? 128 : 64));
+  if (Object.hasOwn(inputs, 'page_flag')) check(opaqueCursor(inputs.page_flag, events ? 128 : 64));
   const query = new URLSearchParams();
   for (const key of [...selectors, 'page_size', 'page_flag']) if (Object.hasOwn(inputs, key)) query.set(key, inputs[key]);
   return { method: 'GET', path: path + '?' + query };
@@ -61,12 +60,10 @@ function event(row, inputs) {
 export function calendarPage(tool, inputs, response) {
   const events = economic(tool), items = response.data?.items, page = response.pagination;
   check(Array.isArray(items) && items.length <= (inputs.page_size ?? 50), 'INVALID_PAGE');
-  check(page && typeof page.completed === 'boolean' && cursor(page.page_flag, events ? 128 : 64), 'INVALID_PAGE');
-  check(page.completed ? page.page_flag === '' : page.page_flag.length > 0 && page.page_flag !== inputs.page_flag, 'INVALID_PAGE');
+  const pagination = cursorPagination(page, inputs.page_flag, events ? 128 : 64);
   const rows = items.map(row => {
     check(row !== null && typeof row === 'object' && !Array.isArray(row), 'INVALID_PAGE');
     return events ? event(row, inputs) : dividend(row, inputs);
   });
-  return { rows, pagination: { completed: page.completed, next_cursor: page.page_flag || null,
-    total: integer(page.total, 0, Number.MAX_SAFE_INTEGER, 'INVALID_PAGE') } };
+  return { rows, pagination };
 }

@@ -294,3 +294,65 @@ test('economic events preserve source type and second precision across UTC+8 mid
   for (const [code, error] of [[-9, /PERMISSION_DENIED/], [-10, /NO_DATA/], [-11, /RATE_LIMITED/]])
     assert.throws(() => project(op, args, JSON.stringify({ ret_code: code })), error);
 });
+
+test('ranking reads honor each endpoint’s market, page limits and documented selectors', () => {
+  const profiles = [
+    ['top-movers', { market: 'US' }, 200], ['period-change', { market: 'SH', period_type: '5MIN' }, 200],
+    ['us-pre-market', {}, 200], ['us-after-hours', {}, 200], ['us-overnight', {}, 200],
+    ['earnings-beat', { market: 'HK', beat_type: 'EPS' }, 300], ['dividend', { market: 'SG', rank_type: 'HIGH_YIELD' }, 200],
+    ['high-dividend-soe', {}, 300], ['short-selling', { market: 'US' }, 35],
+  ];
+  for (const [name, args, maximum] of profiles) {
+    const tool = 'rest_rank_' + name.replaceAll('-', '_');
+    const request = build(tool, { ...args, page_size: maximum, page_flag: 'next/?+1' });
+    const url = new URL(request.path, 'https://example.test');
+    assert.equal(request.method, 'GET'); assert.equal(url.pathname, '/api/v1.0/quote/rank/' + name);
+    assert.equal(url.searchParams.get('page_flag'), 'next/?+1');
+    assert.equal(url.searchParams.get('page_size'), String(maximum));
+    assert.throws(() => build(tool, { ...args, page_size: maximum + 1 }), /INVALID_PARAMETER/);
+    assert.throws(() => build(tool, { ...args, provider_override: 'other' }), /INVALID_PARAMETER/);
+    const page = { ret_code: 0, data: { items: [] }, pagination: { completed: true, total: 0, page_flag: '' } };
+    assert.deepEqual(project(tool, args, JSON.stringify(page)), { rows: [], pagination: { completed: true, total: 0, next_cursor: null } });
+    assert.throws(() => project(tool, args, JSON.stringify({ ret_code: -10 })), /NO_DATA/);
+  }
+  const short = 'rest_rank_short_selling';
+  assert.deepEqual(new URL(build(short, { market: 'HK', plate_code: ['BK1', 'BK2'] }).path, 'https://example.test').searchParams.getAll('plate_code'), ['BK1', 'BK2']);
+  assert.throws(() => build(short, { market: 'HK', plate_code: Array(21).fill('BK') }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_rank_us_overnight', { market: 'US' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_rank_earnings_beat', { market: 'US' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_rank_period_change', { market: 'US', period_type: '1YEAR' }), /INVALID_PARAMETER/);
+  const rank = 'rest_rank_top_movers', args = { market: 'US', market_cap_min: '9007199254740993.0001', market_cap_max: '9007199254740993.0002', pe_min: '-1.20e1', pe_max: -7 };
+  assert.match(build(rank, args).path, /market_cap_min=9007199254740993\.0001/);
+  for (const overrides of [{ market_cap_max: '9007199254740993.0000' }, { pe_max: '-12.01' }, { market_cap_min: -1 }, { price_filter: 'INVALID' }])
+    assert.throws(() => build(rank, { ...args, ...overrides }), /INVALID_PARAMETER/);
+});
+
+test('ranked rows preserve provider text, exact numeric tokens, row order and opaque cursors', () => {
+  const tool = 'rest_rank_top_movers';
+  const example = { code: 'US.AAPL', name: 'Example', cur_price: '100.0100', change_ratio: '3.00', change_amount: '3.01',
+    turnover: '19809.000', volume: '9007199254740993', turnover_ratio: '0.000', pe_ttm: 111, amplitude: 222 };
+  function sample(items, flag = 'b/2') {
+    return JSON.stringify({ ret_code: 0, data: { items }, pagination: { completed: false, page_flag: flag, total: 20 } })
+      .replaceAll('"pe_ttm":111', '"pe_ttm":9007199254740993.0001').replaceAll('"amplitude":222', '"amplitude":-2.000e-1');
+  }
+  const args = { market: 'US', page_flag: 'a/1', page_size: 2 };
+  const result = project(tool, args, sample([example, { ...example, code: 'US.MSFT' }]));
+  assert.deepEqual(result.rows.map(row => row.code), ['US.AAPL', 'US.MSFT']);
+  assert.deepEqual(result.rows[0], { ...example, pe_ttm: '9007199254740993.0001', amplitude: '-2.000e-1' });
+  assert.deepEqual(result.pagination, { completed: false, next_cursor: 'b/2', total: 20 });
+  assert.throws(() => project(tool, args, sample([{ ...example, code: 'HK.00700' }])), /SECURITY_MISMATCH/);
+  assert.throws(() => project(tool, args, sample([example], 'a/1')), /INVALID_PAGE/);
+  assert.throws(() => project(tool, args, sample([{ ...example, pe_ttm: 'example' }])), /INVALID_PAGE/);
+  assert.throws(() => project(tool, args, sample([example, example, example])), /INVALID_PAGE/);
+});
+
+test('Hong Kong state-owned dividend ranking requires a Hong Kong result', () => {
+  const op = 'rest_rank_high_dividend_soe';
+  const row = { code: 'HK.00001', name: 'Fixture', industry: 'Example', cur_price: '11.20', change_ratio: '0.0',
+    market_cap: 1, pe_ttm: 2, pb: 3, dividend_yield_ttm: 4, change_rate_5d: 5, change_rate_10d: 6,
+    change_rate_20d: 7, change_rate_60d: 8, change_rate_120d: 9, change_rate_250d: 10 };
+  const page = code => JSON.stringify({ ret_code: 0, data: { items: [{ ...row, code }] },
+    pagination: { total: 1, completed: true, page_flag: '' } });
+  assert.equal(project(op, {}, page(row.code)).rows[0].change_rate_250d, '10');
+  assert.throws(() => project(op, {}, page('US.AAPL')), /SECURITY_MISMATCH/);
+});

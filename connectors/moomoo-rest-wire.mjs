@@ -45,3 +45,12 @@ export function completePage(pagination) {
   check(pagination == null || (typeof pagination === 'object' && !Array.isArray(pagination) &&
     [undefined, false].includes(pagination.has_more) && !pagination.next_page_token), 'INCOMPLETE_PAGE');
 }
+
+export const opaqueCursor = (value, limit) => typeof value === 'string' && value.length <= limit && !/[\u0000-\u001f\u007f]/u.test(value);
+
+export function cursorPagination(page, requested, limit) {
+  check(page && typeof page.completed === 'boolean' && opaqueCursor(page.page_flag, limit), 'INVALID_PAGE');
+  check(page.completed ? page.page_flag === '' : page.page_flag.length > 0 && page.page_flag !== requested, 'INVALID_PAGE');
+  return { completed: page.completed, next_cursor: page.page_flag || null,
+    total: integer(page.total, 0, Number.MAX_SAFE_INTEGER, 'INVALID_PAGE') };
+}
