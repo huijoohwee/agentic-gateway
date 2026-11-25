@@ -137,6 +137,12 @@ test('documented market research readers share the market REST facade and preser
   const cases = [
     ['rest_research_analyst_stock_ratings', { symbol: 'US.AAPL', analyst_uid: 'analyst / 1', count: 20 },
       '/api/v1.0/quote/US.AAPL/research/analyst-ratings?analyst_uid=analyst+%2F+1&count=20'],
+    ['rest_research_analyst_info', { uids: 'a1,a2' },
+      '/api/v1.0/quote/research/analyst-info?uids=a1%2Ca2'],
+    ['rest_research_institution_info', { uids: 'i1,i2' },
+      '/api/v1.0/quote/research/institution-info?uids=i1%2Ci2'],
+    ['rest_research_rating_change', { market: 'CA', change_type: 'DOWNGRADE', page_flag: 'cursor/2', page_size: 20 },
+      '/api/v1.0/quote/research/rating-change?market=CA&change_type=DOWNGRADE&page_flag=cursor%2F2&page_size=20'],
     ['rest_research_institution_rating_summary', { symbol: 'US.AAPL', institution_uid: 'inst-1' },
       '/api/v1.0/quote/US.AAPL/research/institution-rating-summary?institution_uid=inst-1'],
     ['rest_research_institution_ratings', { institution_uid: 'inst-1', market: 'HK', count: 10 },
@@ -168,8 +174,15 @@ test('documented market research readers share the market REST facade and preser
   assert.deepEqual(describeMoomooResearch('rest_research_stock_ratings').pagination, ['pagination']);
   assert.equal(describeMoomooResearch('rest_research_stock_ratings').row_limit.input, 'page_size');
   assert.equal(describeMoomooResearch('rest_research_top_analysts').optional_total, false);
+  assert.equal(describeMoomooResearch('rest_research_analyst_info').series_limit, 600);
+  assert.equal(describeMoomooResearch('rest_research_institution_info').series_limit, 600);
+  assert.equal(describeMoomooResearch('rest_research_rating_change').optional_total, false);
   assert.throws(() => build('rest_research_target_price', { symbol: 'US.AAPL', need_plot: 'true' }), /INVALID_PARAMETER/);
   assert.throws(() => build('rest_research_latest_ratings', { market: 'SG' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_analyst_info', { uids: 'a1,,a2' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_institution_info', { uids: 'i1, ' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_rating_change', { market: 'HK' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_rating_change', { change_type: 'upgrade' }), /INVALID_PARAMETER/);
   assert.throws(() => build('rest_research_institution_ratings', { institution_uid: 'i', extra: 1 }), /INVALID_PARAMETER/);
   assert.throws(() => build('rest_research_rating_plot', { symbol: 'US.AAPL', uid: 'i', count: 501 }), /INVALID_PARAMETER/);
   assert.throws(() => build('rest_research_stock_ratings', { symbol: 'US.AAPL', page_flag: 'x'.repeat(65) }), /INVALID_PARAMETER/);
@@ -194,6 +207,24 @@ test('documented market research readers share the market REST facade and preser
   assert.deepEqual(project('rest_research_institution_stock_ratings', { symbol: 'US.AAPL', institution_uid: 'i1' },
     wire({ items: [{ rating: 3, target_price: '180.00', recommendation_date: '2026-11-20' }] })).rows,
   [{ symbol: 'US.AAPL', rating: 3, target_price: '180.00', recommendation_date: '2026-11-20' }]);
+  const analysts = project('rest_research_analyst_info', { uids: 'a1,a2' },
+    '{"ret_code":0,"data":{"items":[{"analyst_uid":"a1","analyst_name":"Example Analyst","stars":4.2500,"success_rate":61.1250,"excess_return":9.500}]}}');
+  assert.deepEqual(analysts.rows, [{ analyst_uid: 'a1', analyst_name: 'Example Analyst', stars: '4.2500', success_rate: '61.1250', excess_return: '9.500' }]);
+  const institutions = project('rest_research_institution_info', { uids: 'i1' },
+    wire({ items: [{ institution_uid: 'i1', institution_name: 'Example Research', picture_url: 'https://example.invalid/logo.png' }] }));
+  assert.deepEqual(institutions.rows, [{ institution_uid: 'i1', institution_name: 'Example Research', picture_url: 'https://example.invalid/logo.png' }]);
+  const changes = project('rest_research_rating_change', { market: 'US', change_type: 'UPGRADE', page_flag: 'cursor-1' },
+    '{"ret_code":0,"data":{"items":[{"code":"US.AAPL","name":"Example","rating":3,"last_rating":2,"target_price":234.5000,"last_target_price":200.00,"change_type":"UPGRADE","institution_name":"Example Research","institution_uid":"i1","recommendation_date":"2026-11-20","last_recommendation_date":"2026-10-20"}]},"pagination":{"total":1,"completed":false,"page_flag":"cursor-2"}}');
+  assert.deepEqual(changes.rows, [{ code: 'US.AAPL', name: 'Example', rating: 3, last_rating: 2,
+    target_price: '234.5000', last_target_price: '200.00', change_type: 'UPGRADE', institution_name: 'Example Research',
+    institution_uid: 'i1', recommendation_date: '2026-11-20', last_recommendation_date: '2026-10-20' }]);
+  assert.deepEqual(changes.pagination, { completed: false, next_page_token: 'cursor-2', total: 1 });
+  assert.throws(() => project('rest_research_rating_change', { market: 'US' },
+    wire({ items: [], pagination: { completed: true, page_flag: '' } })), /INVALID_PAGE/);
+  assert.throws(() => project('rest_research_rating_change', { market: 'US', page_flag: 'cursor-1' },
+    wire({ items: [], pagination: { total: 0, completed: false, page_flag: 'cursor-1' } })), /INVALID_PAGE/);
+  assert.throws(() => project('rest_research_analyst_info', { uids: 'a1' },
+    wire({ items: [{ analyst_uid: 'a1', analyst_name: 'Analyst', stars: 'not a number', success_rate: 1, excess_return: 2 }] })), /PRECISION_UNKNOWN/);
   const latest = project('rest_research_latest_ratings', { market: 'US' },
     JSON.stringify({ ret_code: 0, data: { items: [{ code: 'US.AAPL', rating: 4, target_price: '210.25', institution_uid: 'i1',
       institution_name: 'Example Research', recommendation_date: '2026-11-20' }] }, pagination: { completed: true, page_flag: '' } }));

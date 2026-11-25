@@ -2,6 +2,7 @@ import { WireNumber, check, integer, string, readWire, decimal, marketDate, root
 
 const symbolPattern = /^[A-Z0-9_]+\.[A-Za-z0-9_.-]+$/;
 const uidRule = Object.freeze({ required: true, length: Object.freeze([1, 256]) });
+const uidListRule = Object.freeze({ required: true, length: Object.freeze([1, 1024]), comma_separated: true });
 const pageFlagRule = Object.freeze({ length: Object.freeze([0, 64]) });
 const pageSizeRule = Object.freeze({ integer: Object.freeze([1, 20]) });
 const countRule = Object.freeze({ integer: Object.freeze([1, 20]) });
@@ -49,6 +50,30 @@ const specs = Object.freeze({
     text: ['code', 'institution_uid', 'institution_name'], integer: ['rating'], decimal_text: ['target_price'],
     date: ['recommendation_date'], pagination: true
   }),
+  rest_research_analyst_info: freezeSpec({
+    route: 'GET ' + root + 'research/analyst-info', rows_path: itemPath,
+    params: { uids: uidListRule }, row_limit: 600,
+    field_names: ['analyst_uid', 'analyst_name', 'stars', 'success_rate', 'excess_return'],
+    text: ['analyst_uid', 'analyst_name'], decimal_text: ['stars', 'success_rate', 'excess_return']
+  }),
+  rest_research_institution_info: freezeSpec({
+    route: 'GET ' + root + 'research/institution-info', rows_path: itemPath,
+    params: { uids: uidListRule }, row_limit: 600,
+    field_names: ['institution_uid', 'institution_name', 'picture_url'],
+    text: ['institution_uid', 'institution_name', 'picture_url']
+  }),
+  rest_research_rating_change: freezeSpec({
+    route: 'GET ' + root + 'research/rating-change', rows_path: itemPath,
+    params: { market: Object.freeze({ enum: Object.freeze(['US', 'CA']) }),
+      change_type: Object.freeze({ enum: Object.freeze(['UPGRADE', 'DOWNGRADE', 'NEW_RATING']) }),
+      page_flag: pageFlagRule, page_size: pageSizeRule },
+    default_page_size: 10, row_limit: 20,
+    field_names: ['code', 'name', 'rating', 'last_rating', 'target_price', 'last_target_price', 'change_type',
+      'institution_name', 'institution_uid', 'recommendation_date', 'last_recommendation_date'],
+    text: ['code', 'name', 'change_type', 'institution_name', 'institution_uid'],
+    integer: ['rating', 'last_rating'], decimal_text: ['target_price', 'last_target_price'],
+    date: ['recommendation_date', 'last_recommendation_date'], pagination: true, total_required: true
+  }),
   rest_research_rating_plot: freezeSpec({
     route: 'GET ' + root + '{code}/research/rating-plot', symbol_path: true, rows_path: itemPath,
     params: { uid: uidRule, dimension: Object.freeze({ enum: Object.freeze(['INSTITUTION', 'ANALYST']) }), count: Object.freeze({ integer: Object.freeze([1, 500]) }) },
@@ -83,7 +108,7 @@ const specs = Object.freeze({
 });
 
 export const researchRestRoutes = Object.freeze(Object.fromEntries(Object.entries(specs).map(([tool, spec]) => [tool, spec.route])));
-const exactDecimalKeys = new Set(['target_price', 'stars', 'close_price', 'highest', 'average', 'lowest', 'success_rate', 'excess_return']);
+const exactDecimalKeys = new Set(['target_price', 'last_target_price', 'stars', 'close_price', 'highest', 'average', 'lowest', 'success_rate', 'excess_return']);
 function verifySymbol(value) {
   check(typeof value === 'string' && value.length <= 128 && symbolPattern.test(value)); return value;
 }
@@ -101,8 +126,11 @@ function validateParams(tool, inputs) {
     const value = inputs[name];
     if (rule.enum) check(rule.enum.includes(value), 'INVALID_PARAMETER');
     else if (rule.integer) integer(value, rule.integer[0], rule.integer[1]);
-    else if (rule.length) check(typeof value === 'string' && [...value].length >= rule.length[0] &&
-      [...value].length <= rule.length[1] && !/[\u0000-\u001f\u007f]/u.test(value) && value.isWellFormed(), 'INVALID_PARAMETER');
+    else if (rule.length) {
+      check(typeof value === 'string' && [...value].length >= rule.length[0] &&
+        [...value].length <= rule.length[1] && !/[\u0000-\u001f\u007f]/u.test(value) && value.isWellFormed(), 'INVALID_PARAMETER');
+      if (rule.comma_separated) check(value.split(',').every(part => part.trim().length > 0), 'INVALID_PARAMETER');
+    }
     else check(false, 'INVALID_PARAMETER');
     query.set(name, value);
   }
