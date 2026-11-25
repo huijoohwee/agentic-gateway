@@ -16,6 +16,8 @@ Edit shared presets in [catalog/PROMPT-PRESETS.md](catalog/PROMPT-PRESETS.md). R
 
 Import `agentic-gateway/connectors/hyperframes` for standalone declarative HTML. Pass the source and a browser document to `importHyperframesHtml` to get inspected HTML, composition identity, dimensions, duration in milliseconds and ordered clip intervals. The host applies clip visibility at each seek. The authored HTML remains the editable source.
 
+Use `agentic-gateway/connectors/moomoo-coverage` with the packaged catalog and public field register for offline discovery. `publicRoutes(catalog)` keeps the documented REST, MCP and Push spellings and their source digests. `coverageRelations(catalog, routes)` looks up tools and references in both directions. `httpFieldInventory(register, catalog)` exposes individual field records, and `namingDictionaries(catalog)` resolves the published dictionary links. The consumer supplies its own admission and evidence when displaying a route.
+
 Import `agentic-gateway/connectors/moomoo` to project a one-symbol OpenD snapshot. `replayMoomooSnapshot(symbol, response)` labels local evidence as replay. `bindMoomooSnapshot(client, grant)` accepts an authenticated quote client and an explicit one-read entitlement with a zero USD cost and expiry. The host supplies that evidence and selects the online read. The optional Python bridge uses the operator’s local OpenD and separately installed SDK.
 
 [Qualified features, losses and verification](qualification/provider-handoff.md)
