@@ -210,4 +210,3 @@ export function projectMoomooArkResponse(tool, inputs, wire) {
   return { rows, ...(metadata && { metadata }), ...(summary && { summary }),
     ...(item.pagination && { pagination: paginationInfo(response, inputs) }) };
 }
-
