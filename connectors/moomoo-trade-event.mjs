@@ -7,7 +7,8 @@ export const securitiesTradeTopics = Object.freeze([
 ]);
 export const cryptoReportTopics = Object.freeze([1, 3, 4, 5]);
 const fillTopics = new Set(['EVENT_FILL', 'EVENT_FILL_CORRECT', 'EVENT_FILL_CANCEL']);
-const integerFields = new Set(['acc_id', 'uid', 'event_time_us', 'create_time', 'updated_time', 'expire_time', 'start_time', 'end_time']);
+const integerFields = new Set(['acc_id', 'account_id', 'uid', 'event_time_us', 'create_time', 'updated_time', 'update_time',
+  'expire_time', 'start_time', 'end_time', 'counter_broker_id']);
 const decimalPattern = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function check(condition, code = 'INVALID_TRADE_EVENT') {
@@ -26,6 +27,7 @@ function unsigned(value, max = 9223372036854775807n) {
   check(typeof value === 'string' && /^(?:0|[1-9]\d{0,19})$/.test(value) && BigInt(value) <= max, 'PRECISION_UNKNOWN');
   return value;
 }
+const micros = value => unsigned(value, 18446744073709551615n);
 function chronological(start, end) {
   check(BigInt(start) <= BigInt(end));
 }
@@ -47,7 +49,7 @@ function selectFields(source, keys, reader, out = {}) {
 function algorithm(info) {
   if (info == null) return null;
   check(object(info));
-  const result = selectFields(info, ['start_time', 'end_time'], value => unsigned(value));
+  const result = selectFields(info, ['start_time', 'end_time'], micros);
   selectFields(info, ['pricing_strategy', 'layering'], text, result);
   for (const kind of ['twap', 'vwap', 'pov', 'slicer', 'peg', 'iceberg']) {
     if (info[kind] == null) continue;
@@ -75,7 +77,7 @@ function securitiesOrder(row) {
   const order = { order_id: text(row.order_id), symbol: text(row.code), side: text(row.side), type: text(row.order_type),
     status: text(row.order_status), quantity: amount(row.qty), price: optionalAmount(row.price), currency: text(row.currency),
     filled_quantity: amount(row.dealt_qty), average_fill_price: optionalAmount(row.dealt_avg_price),
-    created_us: unsigned(row.create_time), updated_us: unsigned(row.updated_time), expires_us: row.expire_time == null ? null : unsigned(row.expire_time),
+    created_us: micros(row.create_time), updated_us: micros(row.updated_time), expires_us: row.expire_time == null ? null : micros(row.expire_time),
     has_remark: typeof row.remark === 'string' && row.remark.length > 0, has_error: typeof row.last_err_msg === 'string' && row.last_err_msg.length > 0,
     multi_leg: legs(row.multi_leg_info), algo: algorithm(row.algo_info) };
   chronological(order.created_us, order.updated_us);
@@ -83,6 +85,17 @@ function securitiesOrder(row) {
     'position_open_type', 'margin_trading_type', 'margin_period_type'], text, order);
   return selectFields(row, ['aux_price', 'trail_value', 'trail_spread'], amount, order);
 }
+
+function securitiesFill(row) {
+  check(object(row));
+  const created = micros(row.create_time), updated = micros(row.updated_time);
+  chronological(created, updated);
+  return { fill_id: text(row.deal_id), symbol: text(row.code), side: text(row.side), quantity: amount(row.qty),
+    price: amount(row.price), status: text(row.status), created_us: created, updated_us: updated };
+}
+
+export { parseSecurities as readMoomooSecuritiesWire, securitiesOrder as projectMoomooSecuritiesOrder,
+  securitiesFill as projectMoomooSecuritiesFill };
 
 // A trusted caller supplies the selected REST account ID as exact decimal text. Never derive it
 // from the file. Only the private reconciliation result contains event, order and fill identifiers.
@@ -100,18 +113,14 @@ export function replayMoomooSecuritiesEvent(expectedAccountId, wire) {
   const fills = rawFills.map(row => {
     check(object(row) && row.order_id === order.order_id, 'ORDER_BINDING');
     check(row.code === order.symbol || order.multi_leg?.legs.some(leg => leg.code === row.code), 'INSTRUMENT_BINDING');
-    const id = text(row.deal_id);
-    check(!seen.has(id)); seen.add(id);
-    const status = text(row.status);
-    if (topic === 'EVENT_FILL_CORRECT') check(status === 'CHANGED');
-    if (topic === 'EVENT_FILL_CANCEL') check(status === 'CANCELLED');
-    const created = unsigned(row.create_time), updated = unsigned(row.updated_time);
-    chronological(created, updated);
-    return { fill_id: id, symbol: text(row.code), side: text(row.side), quantity: amount(row.qty), price: amount(row.price),
-      status, created_us: created, updated_us: updated };
+    const fill = securitiesFill(row);
+    check(!seen.has(fill.fill_id)); seen.add(fill.fill_id);
+    if (topic === 'EVENT_FILL_CORRECT') check(fill.status === 'CHANGED');
+    if (topic === 'EVENT_FILL_CANCEL') check(fill.status === 'CANCELLED');
+    return fill;
   });
   return { family: 'securities', topic, status: 'decoded', account_binding: 'matched-frame', event_id: text(frame.event_id),
-    event_time_us: unsigned(frame.event_time_us), order, fills };
+    event_time_us: micros(frame.event_time_us), order, fills };
 }
 
 const subreports = Object.freeze({ 1: 'new_rpt', 3: 'cancel_rpt', 4: 'fill_rpt', 5: 'expire_rpt' });
