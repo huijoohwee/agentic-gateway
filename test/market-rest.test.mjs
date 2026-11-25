@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes, describeMoomooCompany } from 'agentic-gateway/connectors/moomoo-market-rest';
+import { buildMoomooMarketRequest as build, projectMoomooMarketResponse as project, marketRestRoutes, describeMoomooCompany,
+  describeMoomooResearch } from 'agentic-gateway/connectors/moomoo-market-rest';
 import { publicRoutes } from 'agentic-gateway/connectors/moomoo-coverage';
 import catalog from 'agentic-gateway/connectors/moomoo-catalog.json' with { type: 'json' };
 import { buildMoomooWatchlistRequest as buildWatchlist, projectMoomooWatchlistResponse as readWatchlist,
@@ -130,6 +131,84 @@ test('company research projections retain source text, numeric tokens, market da
   assert.throws(() => project('quote_company_operational_efficiency', { symbol }, '{"ret_code":-10}'), /NO_DATA/);
   assert.throws(() => project('quote_company_operational_efficiency', { symbol }, '{"ret_code":-8}'), /UNSUPPORTED/);
   assert.throws(() => project('quote_company_operational_efficiency', { symbol }, wire({ currency_code: 'CNY', item_list: [], pagination: { has_more: true } })), /INVALID_PAGE/);
+});
+
+test('documented market research readers share the market REST facade and preserve exact response values', () => {
+  const cases = [
+    ['rest_research_analyst_stock_ratings', { symbol: 'US.AAPL', analyst_uid: 'analyst / 1', count: 20 },
+      '/api/v1.0/quote/US.AAPL/research/analyst-ratings?analyst_uid=analyst+%2F+1&count=20'],
+    ['rest_research_institution_rating_summary', { symbol: 'US.AAPL', institution_uid: 'inst-1' },
+      '/api/v1.0/quote/US.AAPL/research/institution-rating-summary?institution_uid=inst-1'],
+    ['rest_research_institution_ratings', { institution_uid: 'inst-1', market: 'HK', count: 10 },
+      '/api/v1.0/quote/research/institution-ratings?institution_uid=inst-1&market=HK&count=10'],
+    ['rest_research_institution_stock_ratings', { symbol: 'US.AAPL', institution_uid: 'inst-1' },
+      '/api/v1.0/quote/US.AAPL/research/institution-ratings?institution_uid=inst-1'],
+    ['rest_research_latest_ratings', { market: 'CA', page_flag: 'cursor/1', page_size: 20 },
+      '/api/v1.0/quote/research/latest-ratings?market=CA&page_flag=cursor%2F1&page_size=20'],
+    ['rest_research_rating_plot', { symbol: 'US.AAPL', uid: 'inst-1', count: 50 },
+      '/api/v1.0/quote/US.AAPL/research/rating-plot?uid=inst-1&count=50'],
+    ['rest_research_stock_ratings', { symbol: 'US.AAPL', page_size: 20 },
+      '/api/v1.0/quote/US.AAPL/research/stock-ratings?page_size=20'],
+    ['rest_research_target_plot', { symbol: 'US.AAPL', months: 12 },
+      '/api/v1.0/quote/US.AAPL/research/target-plot?months=12'],
+    ['rest_research_target_price', { symbol: 'US.AAPL', need_plot: true },
+      '/api/v1.0/quote/US.AAPL/research/target-price?need_plot=true'],
+    ['rest_research_top_analysts', { market: 'US' }, '/api/v1.0/quote/research/top-analysts?market=US']
+  ];
+  for (const [tool, inputs, expected] of cases) {
+    assert.deepEqual(build(tool, inputs), { method: 'GET', path: expected });
+    assert.equal(marketRestRoutes[tool].startsWith('GET '), true);
+    assert.equal(publicRoutes(catalog).some(row => row.sources.some(source => source.http === marketRestRoutes[tool])), true);
+    const descriptor = describeMoomooResearch(tool);
+    assert.equal(descriptor.route, marketRestRoutes[tool]);
+    assert.ok(Object.keys(descriptor.fields).length > 0);
+    descriptor.text.push('caller_mutation');
+    assert.ok(!describeMoomooResearch(tool).text.includes('caller_mutation'));
+  }
+  assert.deepEqual(describeMoomooResearch('rest_research_stock_ratings').pagination, ['pagination']);
+  assert.equal(describeMoomooResearch('rest_research_stock_ratings').row_limit.input, 'page_size');
+  assert.equal(describeMoomooResearch('rest_research_top_analysts').optional_total, false);
+  assert.throws(() => build('rest_research_target_price', { symbol: 'US.AAPL', need_plot: 'true' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_latest_ratings', { market: 'SG' }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_institution_ratings', { institution_uid: 'i', extra: 1 }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_rating_plot', { symbol: 'US.AAPL', uid: 'i', count: 501 }), /INVALID_PARAMETER/);
+  assert.throws(() => build('rest_research_stock_ratings', { symbol: 'US.AAPL', page_flag: 'x'.repeat(65) }), /INVALID_PARAMETER/);
+
+  const precise = project('rest_research_target_price', { symbol: 'US.AAPL' },
+    '{"ret_code":0,"data":{"highest":123.450000000000001,"average":100.250,"lowest":80.0001,"analyst_count":42,"update_time":1710000000000000}}');
+  assert.deepEqual(precise.rows, [{ symbol: 'US.AAPL', highest: '123.450000000000001', average: '100.250',
+    lowest: '80.0001', analyst_count: 42, update_time: 1710000000000000 }]);
+  const page = project('rest_research_top_analysts', { market: 'US', page_flag: 'cursor-1', page_size: 10 },
+    '{"ret_code":0,"data":{"items":[{"analyst_uid":"a1","analyst_name":"Analyst","stars":4.25,"success_rate":61.125,"excess_return":9.5}]},"pagination":{"total":1,"completed":false,"page_flag":"cursor-2"}}');
+  assert.deepEqual(page.rows, [{ analyst_uid: 'a1', analyst_name: 'Analyst', stars: '4.25', success_rate: '61.125', excess_return: '9.5' }]);
+  assert.deepEqual(page.pagination, { completed: false, next_page_token: 'cursor-2', total: 1 });
+  const stock = project('rest_research_analyst_stock_ratings', { symbol: 'US.AAPL', analyst_uid: 'a1' },
+    wire({ items: [{ rating: 4, target_price: '200.00', recommendation_date: '2026-11-20' }] }));
+  assert.deepEqual(stock.rows, [{ symbol: 'US.AAPL', rating: 4, target_price: '200.00', recommendation_date: '2026-11-20' }]);
+  assert.deepEqual(project('rest_research_institution_rating_summary', { symbol: 'US.AAPL', institution_uid: 'i1' },
+    wire({ institution_name: 'Example Research', institution_uid: 'i1' })).rows,
+  [{ symbol: 'US.AAPL', institution_name: 'Example Research', institution_uid: 'i1' }]);
+  assert.deepEqual(project('rest_research_institution_ratings', { institution_uid: 'i1', market: 'US' },
+    wire({ items: [{ code: 'US.AAPL', rating: 3, target_price: '180.00', recommendation_date: '2026-11-20' }] })).rows,
+  [{ code: 'US.AAPL', rating: 3, target_price: '180.00', recommendation_date: '2026-11-20' }]);
+  assert.deepEqual(project('rest_research_institution_stock_ratings', { symbol: 'US.AAPL', institution_uid: 'i1' },
+    wire({ items: [{ rating: 3, target_price: '180.00', recommendation_date: '2026-11-20' }] })).rows,
+  [{ symbol: 'US.AAPL', rating: 3, target_price: '180.00', recommendation_date: '2026-11-20' }]);
+  const latest = project('rest_research_latest_ratings', { market: 'US' },
+    JSON.stringify({ ret_code: 0, data: { items: [{ code: 'US.AAPL', rating: 4, target_price: '210.25', institution_uid: 'i1',
+      institution_name: 'Example Research', recommendation_date: '2026-11-20' }] }, pagination: { completed: true, page_flag: '' } }));
+  assert.deepEqual(latest.pagination, { completed: true, next_page_token: null });
+  assert.equal(latest.rows[0].code, 'US.AAPL');
+  assert.deepEqual(project('rest_research_rating_plot', { symbol: 'US.AAPL', uid: 'i1' },
+    wire({ items: [{ timestamp: 1710000000000000, close_price: '199.125' }] })).rows,
+  [{ symbol: 'US.AAPL', timestamp: 1710000000000000, close_price: '199.125' }]);
+  assert.deepEqual(project('rest_research_target_plot', { symbol: 'US.AAPL' },
+    '{"ret_code":0,"data":{"items":[{"timestamp":1710000000000000,"close_price":199.125,"target_price":0}]}}').rows,
+  [{ symbol: 'US.AAPL', timestamp: 1710000000000000, close_price: '199.125', target_price: '0' }]);
+  assert.throws(() => project('rest_research_stock_ratings', { symbol: 'US.AAPL' },
+    wire({ items: [], pagination: { completed: false, page_flag: '' } })), /INVALID_PAGE/);
+  assert.throws(() => project('rest_research_top_analysts', { market: 'US' },
+    wire({ items: [], pagination: { completed: true, page_flag: '' } })), /INVALID_PAGE/);
 });
 
 test('the native routes agree with Gateway’s pinned catalog and produce only their documented requests', () => {
