@@ -6,7 +6,7 @@ import { openReferenceIndex } from '../references.mjs';
 
 const { values } = parseArgs({ options: { port: { type: 'string' } } });
 const explicit = values.port ?? process.env.PORT;
-const port = explicit ?? '4174';
+const port = explicit ?? '4178';
 if (!/^(0|[1-9][0-9]{0,4})$/.test(port) || Number(port) > 65535) throw Error('Expected a port from 0 to 65535');
 const read = name => readFile(new URL('../references/' + name, import.meta.url), 'utf8');
 const index = await read('index.json');
@@ -17,7 +17,7 @@ const rows = entries.map(({ id, owner, revision, path }) =>
   '<li><a href="https://github.com/huijoohwee/' + owner + '/blob/' + revision + '/' + path + '">' + id + '</a> · ' + owner + '</li>');
 const html = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   '<title>Gateway references</title><main><h1>Gateway references</h1><p><a href="/references/index.json">Reference index</a> · ' +
-  '<a href="/references/pin.json">Index pin</a> · <a href="http://127.0.0.1:4173/">Design token catalog</a></p>' +
+  '<a href="/references/pin.json">Index pin</a> · <a href="http://127.0.0.1:4180/">Design token catalog</a></p>' +
   '<p>Token profiles are owned and served by Agentic Design System. Start its local preview separately.</p>' +
   '<ul>' + rows.join('') + '</ul></main></html>';
 const routes = new Map([['/', ['text/html', html]], ['/references/index.json', ['application/json', index]],
