@@ -17,7 +17,9 @@ const rows = entries.map(({ id, owner, revision, path }) =>
   '<li><a href="https://github.com/huijoohwee/' + owner + '/blob/' + revision + '/' + path + '">' + id + '</a> · ' + owner + '</li>');
 const html = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   '<title>Gateway references</title><main><h1>Gateway references</h1><p><a href="/references/index.json">Reference index</a> · ' +
-  '<a href="/references/pin.json">Index pin</a></p><ul>' + rows.join('') + '</ul></main></html>';
+  '<a href="/references/pin.json">Index pin</a> · <a href="http://127.0.0.1:4173/">Design token catalog</a></p>' +
+  '<p>Token profiles are owned and served by Agentic Design System. Start its local preview separately.</p>' +
+  '<ul>' + rows.join('') + '</ul></main></html>';
 const routes = new Map([['/', ['text/html', html]], ['/references/index.json', ['application/json', index]],
   ['/references/pin.json', ['application/json', pin]]]);
 const server = createServer((request, response) => {
