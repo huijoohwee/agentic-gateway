@@ -20,6 +20,114 @@ dictionary_links:
   semantic: "DICTIONARY-SEMANTIC.md"
   binding: "DICTIONARY-BINDING.md"
 prompt_presets:
+  - id: "canvas-process"
+    label: "Process map"
+    slash_command: "/canvas-process-prompt-preset"
+    runtime_command: "/canvas.project"
+    description: "Map how a request moves from intake to review and delivery."
+    activation: "source-backed-canvas"
+    authoring_starter: true
+    invocation_modes: ["native-chat-response", "mcp-invocation"]
+    chat_route: "active native shared runtime"
+    mcp_tool: "agentic-graph.agentic_canvas_os.docs.invoke"
+    mcp_token: "/canvas.project"
+    prompt: |-
+      /canvas.project @source.frontmatter @source.body @canvas #canvas #frontmatter #runtime-ready
+
+      ---
+      title: "Process map"
+      flow:
+        nodes:
+          - {"id": "process-1", "label": "Intake", "type": "Concept", "position": {"x": 0, "y": 0}}
+          - {"id": "process-2", "label": "Review", "type": "Concept", "position": {"x": 240, "y": 0}}
+          - {"id": "process-3", "label": "Deliver", "type": "Concept", "position": {"x": 0, "y": 140}}
+        edges:
+          - {"id": "process-edge-1", "source": "process-1", "target": "process-2", "label": "leads to"}
+          - {"id": "process-edge-2", "source": "process-2", "target": "process-3", "label": "leads to"}
+      ---
+
+      Map how a request moves from intake to review and delivery.
+  - id: "canvas-dependency"
+    label: "Dependency map"
+    slash_command: "/canvas-dependency-prompt-preset"
+    runtime_command: "/canvas.project"
+    description: "Show which inputs must be ready before a build can start."
+    activation: "source-backed-canvas"
+    authoring_starter: true
+    invocation_modes: ["native-chat-response", "mcp-invocation"]
+    chat_route: "active native shared runtime"
+    mcp_tool: "agentic-graph.agentic_canvas_os.docs.invoke"
+    mcp_token: "/canvas.project"
+    prompt: |-
+      /canvas.project @source.frontmatter @source.body @canvas #canvas #frontmatter #runtime-ready
+
+      ---
+      title: "Dependency map"
+      flow:
+        nodes:
+          - {"id": "dependency-1", "label": "Source", "type": "Concept", "position": {"x": 0, "y": 0}}
+          - {"id": "dependency-2", "label": "Configuration", "type": "Concept", "position": {"x": 240, "y": 0}}
+          - {"id": "dependency-3", "label": "Build", "type": "Concept", "position": {"x": 0, "y": 140}}
+        edges:
+          - {"id": "dependency-edge-1", "source": "dependency-1", "target": "dependency-3", "label": "leads to"}
+          - {"id": "dependency-edge-2", "source": "dependency-2", "target": "dependency-3", "label": "leads to"}
+      ---
+
+      Show which inputs must be ready before a build can start.
+  - id: "canvas-sequence"
+    label: "Request sequence"
+    slash_command: "/canvas-sequence-prompt-preset"
+    runtime_command: "/canvas.project"
+    description: "Trace one request through the client, service and store."
+    activation: "source-backed-canvas"
+    authoring_starter: true
+    invocation_modes: ["native-chat-response", "mcp-invocation"]
+    chat_route: "active native shared runtime"
+    mcp_tool: "agentic-graph.agentic_canvas_os.docs.invoke"
+    mcp_token: "/canvas.project"
+    prompt: |-
+      /canvas.project @source.frontmatter @source.body @canvas #canvas #frontmatter #runtime-ready
+
+      ---
+      title: "Request sequence"
+      flow:
+        nodes:
+          - {"id": "sequence-1", "label": "Client", "type": "Concept", "position": {"x": 0, "y": 0}}
+          - {"id": "sequence-2", "label": "Service", "type": "Concept", "position": {"x": 240, "y": 0}}
+          - {"id": "sequence-3", "label": "Store", "type": "Concept", "position": {"x": 0, "y": 140}}
+        edges:
+          - {"id": "sequence-edge-1", "source": "sequence-1", "target": "sequence-2", "label": "leads to"}
+          - {"id": "sequence-edge-2", "source": "sequence-2", "target": "sequence-3", "label": "leads to"}
+      ---
+
+      Trace one request through the client, service and store.
+  - id: "canvas-decision"
+    label: "Decision map"
+    slash_command: "/canvas-decision-prompt-preset"
+    runtime_command: "/canvas.project"
+    description: "Sketch the choices that follow a review."
+    activation: "source-backed-canvas"
+    authoring_starter: true
+    invocation_modes: ["native-chat-response", "mcp-invocation"]
+    chat_route: "active native shared runtime"
+    mcp_tool: "agentic-graph.agentic_canvas_os.docs.invoke"
+    mcp_token: "/canvas.project"
+    prompt: |-
+      /canvas.project @source.frontmatter @source.body @canvas #canvas #frontmatter #runtime-ready
+
+      ---
+      title: "Decision map"
+      flow:
+        nodes:
+          - {"id": "decision-1", "label": "Review", "type": "Concept", "position": {"x": 0, "y": 0}}
+          - {"id": "decision-2", "label": "Approve", "type": "Concept", "position": {"x": 240, "y": 0}}
+          - {"id": "decision-3", "label": "Revise", "type": "Concept", "position": {"x": 0, "y": 140}}
+        edges:
+          - {"id": "decision-edge-1", "source": "decision-1", "target": "decision-2", "label": "leads to"}
+          - {"id": "decision-edge-2", "source": "decision-1", "target": "decision-3", "label": "leads to"}
+      ---
+
+      Sketch the choices that follow a review.
   - id: "agent-observability"
     label: "Agent observability"
     slash_command: "/agent-observability-prompt-preset"

@@ -1,0 +1,15 @@
+/canvas.project @source.frontmatter @source.body @canvas #canvas #frontmatter #runtime-ready
+
+---
+title: "Process map"
+flow:
+  nodes:
+    - {"id": "process-1", "label": "Intake", "type": "Concept", "position": {"x": 0, "y": 0}}
+    - {"id": "process-2", "label": "Review", "type": "Concept", "position": {"x": 240, "y": 0}}
+    - {"id": "process-3", "label": "Deliver", "type": "Concept", "position": {"x": 0, "y": 140}}
+  edges:
+    - {"id": "process-edge-1", "source": "process-1", "target": "process-2", "label": "leads to"}
+    - {"id": "process-edge-2", "source": "process-2", "target": "process-3", "label": "leads to"}
+---
+
+Map how a request moves from intake to review and delivery.
