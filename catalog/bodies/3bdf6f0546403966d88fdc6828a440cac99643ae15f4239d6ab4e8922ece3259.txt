@@ -1,0 +1,15 @@
+/canvas.project @source.frontmatter @source.body @canvas #canvas #frontmatter #runtime-ready
+
+---
+title: "Dependency map"
+flow:
+  nodes:
+    - {"id": "dependency-1", "label": "Source", "type": "Concept", "position": {"x": 0, "y": 0}}
+    - {"id": "dependency-2", "label": "Configuration", "type": "Concept", "position": {"x": 240, "y": 0}}
+    - {"id": "dependency-3", "label": "Build", "type": "Concept", "position": {"x": 0, "y": 140}}
+  edges:
+    - {"id": "dependency-edge-1", "source": "dependency-1", "target": "dependency-3", "label": "leads to"}
+    - {"id": "dependency-edge-2", "source": "dependency-2", "target": "dependency-3", "label": "leads to"}
+---
+
+Show which inputs must be ready before a build can start.

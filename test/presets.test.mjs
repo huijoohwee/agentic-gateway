@@ -34,3 +34,16 @@ test('missing pins, stale content and ambiguous aliases fail before body selecti
   const catalog=await openPresetCatalog(text,pin);
   await assert.rejects(catalog.select('video-agent',async ()=>'changed'),{code:'body_digest_mismatch'});
 });
+
+test('authoring starters select locally and carry editable native flow source', async () => {
+  const catalog = await openPresetCatalog(text, pin);
+  const starters = catalog.list().filter(entry => entry.authoring_starter);
+  assert.equal(starters.length, 4);
+  for (const entry of starters) {
+    const selected = await catalog.select(entry.id, hash =>
+      readFile(new URL('../catalog/bodies/' + hash + '.txt', import.meta.url), 'utf8'));
+    assert.equal(entry.runtime_command, '/canvas.project');
+    assert.ok(selected.prompt.startsWith(entry.runtime_command + ' '));
+    assert.match(selected.prompt, /\n---\n[\s\S]+\nflow:\n {2}nodes:\n[\s\S]+\n {2}edges:\n/);
+  }
+});
