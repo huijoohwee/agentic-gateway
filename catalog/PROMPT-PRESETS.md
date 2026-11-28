@@ -20,6 +20,20 @@ dictionary_links:
   semantic: "DICTIONARY-SEMANTIC.md"
   binding: "DICTIONARY-BINDING.md"
 prompt_presets:
+  - id: "canvas-sketch"
+    label: "Sketch on Canvas"
+    slash_command: "/canvas-sketch-prompt-preset"
+    runtime_command: "/canvas.project"
+    description: "Draw editable figures, freehand paths and named diagrams from Chat."
+    activation: "source-backed-canvas"
+    invocation_modes: ["native-chat-response", "mcp-invocation"]
+    chat_route: "active native shared runtime"
+    mcp_tool: "agentic-graph.agentic_canvas_os.docs.invoke"
+    mcp_token: "/canvas.project"
+    prompt: |-
+      /canvas.project @canvas #canvas
+
+      Sketch a robot pair-programming with a human
   - id: "canvas-process"
     label: "Process map"
     slash_command: "/canvas-process-prompt-preset"

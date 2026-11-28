@@ -1,0 +1,3 @@
+/canvas.project @canvas #canvas
+
+Sketch a robot pair-programming with a human
